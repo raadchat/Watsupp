@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>لوحة التحكم — بوت واتساب</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <span class="dot"></span>
+        <span>لوحة بوت واتساب</span>
+      </div>
+
+      <nav class="nav-group">
+        <button class="nav-item active" data-section="categories">
+          <span>🗂️ الأقسام</span>
+        </button>
+        <button class="nav-item" data-section="services">
+          <span>📦 الخدمات</span>
+        </button>
+        <button class="nav-item" data-section="customers">
+          <span>👥 العملاء</span>
+        </button>
+        <button class="nav-item" data-section="bulk">
+          <span>📣 الرسائل الجماعية</span>
+        </button>
+        <button class="nav-item" data-section="settings">
+          <span>🔌 الاتصال بواتساب</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-admin">
+          <span>مسجّل الدخول:</span>
+          <strong id="admin-username">—</strong>
+        </div>
+        <button id="logout-btn" class="logout-btn">تسجيل الخروج</button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button id="menu-toggle" class="menu-toggle" aria-label="القائمة">☰</button>
+          <h1 id="topbar-title">الأقسام</h1>
+        </div>
+        <span class="live-badge"><span class="pulse-dot"></span> متصل بواتساب مباشرة</span>
+      </header>
+
+      <main class="content">
+
+        <!-- ============== قسم الأقسام (المستوى الأول في قائمة واتساب) ============== -->
+        <section id="section-categories" class="section active">
+          <div class="section-header">
+            <div>
+              <h2>الأقسام</h2>
+              <p class="subtitle">القائمة الأولى التي يراها العميل عند كتابة "الخدمات" — اختيار قسم يفتح قائمة بخدماته فقط.</p>
+            </div>
+            <button class="btn btn-primary" id="add-category-btn">+ إضافة قسم</button>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table id="categories-table">
+                <thead>
+                  <tr>
+                    <th>المعرف</th>
+                    <th>اسم القسم</th>
+                    <th>الوصف</th>
+                    <th>الترتيب</th>
+                    <th>الحالة</th>
+                    <th>آخر تعديل</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="categories-tbody"></tbody>
+              </table>
+            </div>
+            <div id="categories-empty" class="state-block hidden">
+              <div class="state-icon">🗂️</div>
+              <h3>لا توجد أقسام بعد</h3>
+              <p>بدون أقسام، سيعرض البوت كل الخدمات النشطة كقائمة واحدة مباشرة. أضف قسماً لتفعيل قائمة على مستويين.</p>
+              <button class="btn btn-primary" id="add-category-btn-empty">+ إضافة قسم</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============== قسم الخدمات ============== -->
+        <section id="section-services" class="section">
+          <div class="section-header">
+            <div>
+              <h2>الخدمات</h2>
+              <p class="subtitle">القائمة التي يراها العميل عند اختيار قسم على واتساب — أي تعديل هنا يظهر فوراً.</p>
+            </div>
+            <button class="btn btn-primary" id="add-service-btn">+ إضافة خدمة</button>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table id="services-table">
+                <thead>
+                  <tr>
+                    <th>المعرف</th>
+                    <th>اسم الخدمة</th>
+                    <th>الوصف</th>
+                    <th>القسم</th>
+                    <th>الحالة</th>
+                    <th>تاريخ الإنشاء</th>
+                    <th>آخر تعديل</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="services-tbody"></tbody>
+              </table>
+            </div>
+            <div id="services-empty" class="state-block hidden">
+              <div class="state-icon">📦</div>
+              <h3>لا توجد خدمات بعد</h3>
+              <p>أضف أول خدمة ليبدأ البوت بعرضها للعملاء على واتساب.</p>
+              <button class="btn btn-primary" id="add-service-btn-empty">+ إضافة خدمة</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============== قسم العملاء ============== -->
+        <section id="section-customers" class="section">
+          <div class="section-header">
+            <div>
+              <h2>العملاء</h2>
+              <p class="subtitle">كل من راسل البوت على واتساب، وحالة محادثته الحالية.</p>
+            </div>
+            <div class="toolbar">
+              <div class="search-input">
+                <input type="text" id="customer-search" placeholder="ابحث برقم الهاتف…" />
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table id="customers-table">
+                <thead>
+                  <tr>
+                    <th>رقم الهاتف</th>
+                    <th>آخر تواصل</th>
+                    <th>حالة المحادثة</th>
+                    <th>الحالة</th>
+                    <th>تاريخ الإنشاء</th>
+                    <th>آخر تحديث</th>
+                  </tr>
+                </thead>
+                <tbody id="customers-tbody"></tbody>
+              </table>
+            </div>
+            <div id="customers-empty" class="state-block hidden">
+              <div class="state-icon">👥</div>
+              <h3>لا يوجد عملاء بعد</h3>
+              <p>سيظهر هنا كل عميل يبدأ محادثة مع البوت على واتساب.</p>
+            </div>
+            <div class="pagination" id="customers-pagination">
+              <span id="pagination-info">—</span>
+              <div class="pager-btns">
+                <button id="prev-page-btn">السابق</button>
+                <button id="next-page-btn">التالي</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============== قسم الرسائل الجماعية ============== -->
+        <section id="section-bulk" class="section">
+          <div class="section-header">
+            <div>
+              <h2>الرسائل الجماعية</h2>
+              <p class="subtitle">تُرسَل الأرقام واحداً تلو الآخر عبر طابور داخلي، احتراماً لحدود واتساب — وليس دفعة واحدة.</p>
+            </div>
+          </div>
+
+          <div class="bulk-grid">
+            <div class="card card-pad">
+              <form id="bulk-form">
+                <div class="field">
+                  <label for="bulk-message">نص الرسالة</label>
+                  <textarea id="bulk-message" rows="4" placeholder="اكتب نص الرسالة التي ستُرسل لجميع الأرقام…" required></textarea>
+                </div>
+
+                <div class="field">
+                  <label for="bulk-file">رفع ملف أرقام (اختياري)</label>
+                  <input type="file" id="bulk-file" accept=".txt,.csv" class="hidden" />
+                  <div id="file-drop" class="file-drop">📄 اضغط لاختيار ملف نصي (رقم في كل سطر)</div>
+                  <p class="hint">يمكن أيضاً الجمع مع الأرقام المُدخلة يدوياً بالأسفل.</p>
+                </div>
+
+                <div class="field">
+                  <label for="bulk-numbers">أو أدخل الأرقام يدوياً</label>
+                  <textarea id="bulk-numbers" rows="4" placeholder="رقم في كل سطر، مثال:&#10;201234567890&#10;966512345678"></textarea>
+                </div>
+
+                <button type="submit" id="bulk-submit" class="btn btn-primary btn-block">
+                  <span class="spinner"></span>
+                  <span class="btn-label">بدء الإرسال</span>
+                </button>
+              </form>
+
+              <div class="stat-row">
+                <div class="stat-box">
+                  <div class="value mono" id="stat-total">0</div>
+                  <div class="label">إجمالي الأرقام</div>
+                </div>
+                <div class="stat-box sent">
+                  <div class="value mono" id="stat-sent">0</div>
+                  <div class="label">تم الإرسال</div>
+                </div>
+                <div class="stat-box failed">
+                  <div class="value mono" id="stat-failed">0</div>
+                  <div class="label">فشل الإرسال</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-pad" style="padding-bottom: 0;">
+                <h3 style="margin:0 0 4px; font-size:15px;">سجل الوظائف الأخيرة</h3>
+                <p class="subtitle" style="margin-bottom:14px;">يتحدّث تلقائياً أثناء المعالجة.</p>
+              </div>
+              <div class="table-wrap">
+                <table id="jobs-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>الرسالة</th>
+                      <th>الحالة</th>
+                      <th>مرسَل / إجمالي</th>
+                    </tr>
+                  </thead>
+                  <tbody id="jobs-tbody"></tbody>
+                </table>
+              </div>
+              <div id="jobs-empty" class="state-block hidden">
+                <div class="state-icon">📣</div>
+                <h3>لا توجد وظائف إرسال بعد</h3>
+                <p>ستظهر هنا كل عملية إرسال جماعي بعد إطلاقها.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============== قسم الاتصال بواتساب ============== -->
+        <section id="section-settings" class="section">
+          <div class="section-header">
+            <div>
+              <h2>الاتصال بواتساب</h2>
+              <p class="subtitle">بيانات اتصال WhatsApp Cloud API — تُحفظ في قاعدة البيانات، بلا حاجة لتعديل ملفات الخادم.</p>
+            </div>
+            <span id="settings-status-badge" class="live-badge">جارٍ التحقق…</span>
+          </div>
+
+          <div class="bulk-grid">
+            <div class="card card-pad">
+              <form id="settings-form">
+                <div class="field">
+                  <label for="settings-phone-number-id">Phone Number ID</label>
+                  <input type="text" id="settings-phone-number-id" class="mono" placeholder="مثال: 896292656533055" required />
+                </div>
+
+                <div class="field">
+                  <label for="settings-access-token">Access Token</label>
+                  <input type="password" id="settings-access-token" autocomplete="off" placeholder="الصق التوكن هنا" />
+                  <p class="hint" id="settings-token-hint">لم يُحفظ أي توكن بعد.</p>
+                </div>
+
+                <div class="field">
+                  <label for="settings-business-account-id">Business Account ID (اختياري)</label>
+                  <input type="text" id="settings-business-account-id" class="mono" placeholder="مثال: 896292656533055" />
+                </div>
+
+                <div class="field">
+                  <label for="settings-verify-token">Verify Token</label>
+                  <div class="toolbar">
+                    <input type="text" id="settings-verify-token" class="mono" style="flex:1;" required />
+                    <button type="button" class="btn btn-secondary" id="copy-verify-token-btn">نسخ</button>
+                  </div>
+                  <p class="hint">ألصِق نفس القيمة تماماً في إعدادات Webhook بلوحة Meta للمطورين.</p>
+                </div>
+
+                <div class="field">
+                  <label>Webhook Callback URL</label>
+                  <div class="toolbar">
+                    <input type="text" id="settings-webhook-url" class="mono" style="flex:1;" readonly />
+                    <button type="button" class="btn btn-secondary" id="copy-webhook-url-btn">نسخ</button>
+                  </div>
+                </div>
+
+                <div class="toolbar" style="margin-top: 6px;">
+                  <button type="submit" id="settings-save-btn" class="btn btn-primary">
+                    <span class="spinner"></span>
+                    <span class="btn-label">حفظ واختبار الاتصال</span>
+                  </button>
+                  <button type="button" id="settings-retest-btn" class="btn btn-secondary">
+                    <span class="spinner"></span>
+                    <span class="btn-label">إعادة اختبار الاتصال</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="card card-pad">
+              <h3 style="margin:0 0 4px; font-size:15px;">نتيجة آخر اختبار</h3>
+              <p class="subtitle" style="margin-bottom:14px;">تُحدَّث فور كل حفظ أو إعادة اختبار.</p>
+              <div id="settings-result" class="state-block">
+                <div class="state-icon">🔌</div>
+                <h3>لم يُختبر الاتصال بعد</h3>
+                <p>املأ البيانات واضغط "حفظ واختبار الاتصال".</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ============== Modal: إضافة/تعديل خدمة ============== -->
+  <div id="service-modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="service-modal-title">إضافة خدمة</h3>
+        <button class="modal-close" id="service-modal-close">×</button>
+      </div>
+      <form id="service-form">
+        <div class="modal-body">
+          <input type="hidden" id="service-db-id" />
+
+          <div class="field">
+            <label for="service-id">معرف الخدمة (Service ID)</label>
+            <input type="text" id="service-id" placeholder="مثال: svc_delivery" required />
+            <p class="hint">معرف ثابت يُستخدم داخلياً وفي رسائل واتساب — لا يظهر للعميل كنص.</p>
+          </div>
+
+          <div class="field">
+            <label for="service-name">اسم الخدمة</label>
+            <input type="text" id="service-name" required />
+          </div>
+
+          <div class="field">
+            <label for="service-description">الوصف</label>
+            <textarea id="service-description" rows="3"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="service-category">القسم</label>
+            <select id="service-category">
+              <option value="">بدون قسم (يظهر ضمن القائمة المسطّحة إن لم توجد أقسام)</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="service-status">الحالة</label>
+            <select id="service-status">
+              <option value="active">نشطة (تظهر للعملاء)</option>
+              <option value="inactive">غير نشطة (مخفية)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="service-save-btn">
+            <span class="spinner"></span>
+            <span class="btn-label">حفظ</span>
+          </button>
+          <button type="button" class="btn btn-secondary" id="service-cancel-btn">إلغاء</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== Modal: إضافة/تعديل قسم ============== -->
+  <div id="category-modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="category-modal-title">إضافة قسم</h3>
+        <button class="modal-close" id="category-modal-close">×</button>
+      </div>
+      <form id="category-form">
+        <div class="modal-body">
+          <input type="hidden" id="category-db-id" />
+
+          <div class="field">
+            <label for="category-id">معرف القسم (Category ID)</label>
+            <input type="text" id="category-id" placeholder="مثال: cat_banking" required />
+            <p class="hint">معرف ثابت يُستخدم داخلياً وفي رسائل واتساب — لا يظهر للعميل كنص.</p>
+          </div>
+
+          <div class="field">
+            <label for="category-name">اسم القسم</label>
+            <input type="text" id="category-name" required />
+          </div>
+
+          <div class="field">
+            <label for="category-description">الوصف (اختياري)</label>
+            <textarea id="category-description" rows="2"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="category-display-order">ترتيب الظهور</label>
+            <input type="number" id="category-display-order" value="0" step="1" />
+            <p class="hint">الأصغر يظهر أولاً في قائمة واتساب للعميل.</p>
+          </div>
+
+          <div class="field">
+            <label for="category-status">الحالة</label>
+            <select id="category-status">
+              <option value="active">نشط (يظهر للعملاء)</option>
+              <option value="inactive">غير نشط (مخفي)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="category-save-btn">
+            <span class="spinner"></span>
+            <span class="btn-label">حفظ</span>
+          </button>
+          <button type="button" class="btn btn-secondary" id="category-cancel-btn">إلغاء</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== Modal: تأكيد الحذف ============== -->
+  <div id="delete-modal-overlay" class="modal-overlay hidden">
+    <div class="modal" style="max-width: 380px;">
+      <div class="modal-header">
+        <h3>تأكيد الحذف</h3>
+        <button class="modal-close" id="delete-modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="delete-modal-text">هل أنت متأكد من حذف هذه الخدمة؟ لا يمكن التراجع عن هذا الإجراء.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="delete-confirm-btn">
+          <span class="spinner"></span>
+          <span class="btn-label">حذف</span>
+        </button>
+        <button class="btn btn-secondary" id="delete-cancel-btn">إلغاء</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

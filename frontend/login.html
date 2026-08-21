@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تسجيل الدخول — لوحة تحكم بوت واتساب</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="login-shell">
+    <!-- لوحة الهوية -->
+    <aside class="login-brand">
+      <div class="brand-mark">
+        <span class="dot"></span>
+        <span>لوحة بوت واتساب</span>
+      </div>
+
+      <div class="brand-copy">
+        <h1>كل تغيير في هذه اللوحة يصل للعميل فوراً على واتساب.</h1>
+        <p>أضف خدمة أو عدّلها أو أوقفها — بلا إعادة تشغيل للخادم وبلا لمس أي سطر كود. القائمة التي يراها عملاؤك مصدرها هذه اللوحة مباشرة.</p>
+      </div>
+
+      <div class="brand-status">
+        <span class="pulse-dot"></span>
+        <span>متصل بقاعدة البيانات ومستعد لخدمة العملاء</span>
+      </div>
+    </aside>
+
+    <!-- نموذج الدخول -->
+    <div class="login-form-side">
+      <div class="login-card">
+        <h2>تسجيل الدخول</h2>
+        <p class="subtitle">أدخل بيانات حساب المدير للوصول إلى لوحة التحكم</p>
+
+        <div id="login-error" class="form-error hidden" role="alert"></div>
+
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="username">اسم المستخدم</label>
+            <input type="text" id="username" name="username" autocomplete="username" required />
+          </div>
+
+          <div class="field">
+            <label for="password">كلمة المرور</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required />
+          </div>
+
+          <button type="submit" id="login-submit" class="btn btn-primary btn-block">
+            <span class="spinner"></span>
+            <span class="btn-label">دخول</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/login.js"></script>
+</body>
+</html>

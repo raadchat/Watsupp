@@ -1,0 +1,17 @@
+// routes/messages.js
+
+const express = require('express');
+const router = express.Router();
+
+const messagesController = require('../controllers/messagesController');
+const { authenticateToken } = require('../middleware/auth');
+
+router.use(authenticateToken);
+
+// POST /api/messages/bulk  (multipart/form-data: file اختياري + message + phone_numbers اختياري)
+router.post('/bulk', messagesController.upload.single('file'), messagesController.sendBulkMessages);
+
+// GET /api/messages/status
+router.get('/status', messagesController.getMessagesStatus);
+
+module.exports = router;
