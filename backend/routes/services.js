@@ -21,6 +21,12 @@ router.post(
   body('name').trim().notEmpty().withMessage('اسم الخدمة مطلوب'),
   body('category_id').optional({ nullable: true }).isInt().withMessage('القسم المحدَّد غير صالح'),
   body('status').optional().isIn(['active', 'inactive']).withMessage('الحالة يجب أن تكون active أو inactive'),
+  body('reply_type').optional().isIn(['INFO', 'COLLECT_INPUT']).withMessage('نوع الرد يجب أن يكون INFO أو COLLECT_INPUT'),
+  body('input_format')
+    .optional({ nullable: true })
+    .isIn(['NUMBERS', 'ALPHANUMERIC', 'LETTERS'])
+    .withMessage('نوع المدخل يجب أن يكون أرقام أو أرقام وحروف أو حروف فقط'),
+  body('external_api_url').optional({ nullable: true, checkFalsy: true }).isURL().withMessage('رابط الـ API الخارجي غير صالح'),
   handleValidation,
   servicesController.createService
 );
@@ -32,6 +38,12 @@ router.put(
   body('name').trim().notEmpty().withMessage('اسم الخدمة مطلوب'),
   body('category_id').optional({ nullable: true }).isInt().withMessage('القسم المحدَّد غير صالح'),
   body('status').optional().isIn(['active', 'inactive']).withMessage('الحالة يجب أن تكون active أو inactive'),
+  body('reply_type').optional().isIn(['INFO', 'COLLECT_INPUT']).withMessage('نوع الرد يجب أن يكون INFO أو COLLECT_INPUT'),
+  body('input_format')
+    .optional({ nullable: true })
+    .isIn(['NUMBERS', 'ALPHANUMERIC', 'LETTERS'])
+    .withMessage('نوع المدخل يجب أن يكون أرقام أو أرقام وحروف أو حروف فقط'),
+  body('external_api_url').optional({ nullable: true, checkFalsy: true }).isURL().withMessage('رابط الـ API الخارجي غير صالح'),
   handleValidation,
   servicesController.updateService
 );

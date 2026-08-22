@@ -133,4 +133,80 @@ async function testConnection({ phone_number_id, access_token }) {
   }
 }
 
-module.exports = { sendTextMessage, sendInteractiveListMessage, testConnection };
+/**
+ * إرسال صورة (مع تعليق نصي اختياري) عبر رابط عام يستطيع خادم Meta الوصول
+ * إليه — يُستخدم لرسالة الترحيب المُهيَّأة من لوحة التحكم. لن يعمل إن كان
+ * imageUrl يشير إلى localhost (Meta لا يستطيع الوصول لجهازك)؛ يعمل بمجرد
+ * نشر الخادم على نطاق حقيقي أو تشغيل نفق مثل ngrok أثناء التجربة.
+ * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
+ */
+async function sendImageMessage(to, imageUrl, caption) {
+  const settings = whatsappSettingsRepository.get();
+  const client = settings && buildClient(settings.phone_number_id, settings.access_token);
+  if (!client) {
+    console.error('[whatsappService] sendImageMessage failed:', NOT_CONFIGURED_ERROR);
+    return { success: false, error: NOT_CONFIGURED_ERROR };
+  }
+
+  try {
+    const response = await client.post('/messages', {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'image',
+      image: { link: imageUrl, caption: caption || undefined },
+    });
+    return { success: true, messageId: extractMessageId(response) };
+  } catch (err) {
+    const error = extractApiError(err);
+    console.error('[whatsappService] sendImageMessage failed:', error);
+    return { success: false, error };
+  }
+}
+
+/**
+ * إرسال رسالة أزرار سريعة (Reply Buttons) — تدعم واتساب حداً أقصى 3 أزرار
+ * لكل رسالة (على عكس القوائم التي تصل حتى 10). تُستخدم لأسئلة نعم/لا
+ * البسيطة (مثل الموافقة على الإشعارات) بدل قائمة تفاعلية كاملة.
+ * @param {string} to
+ * @param {string} bodyText
+ * @param {Array<{id: string, title: string}>} buttons - 3 كحد أقصى، العنوان 20 حرفاً كحد أقصى
+ */
+async function sendButtonMessage(to, bodyText, buttons) {
+  const settings = whatsappSettingsRepository.get();
+  const client = settings && buildClient(settings.phone_number_id, settings.access_token);
+  if (!client) {
+    console.error('[whatsappService] sendButtonMessage failed:', NOT_CONFIGURED_ERROR);
+    return { success: false, error: NOT_CONFIGURED_ERROR };
+  }
+
+  try {
+    const response = await client.post('/messages', {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: bodyText },
+        action: {
+          buttons: buttons.slice(0, 3).map((b) => ({
+            type: 'reply',
+            reply: { id: b.id, title: b.title.slice(0, 20) },
+          })),
+        },
+      },
+    });
+    return { success: true, messageId: extractMessageId(response) };
+  } catch (err) {
+    const error = extractApiError(err);
+    console.error('[whatsappService] sendButtonMessage failed:', error);
+    return { success: false, error };
+  }
+}
+
+module.exports = {
+  sendTextMessage,
+  sendInteractiveListMessage,
+  sendImageMessage,
+  sendButtonMessage,
+  testConnection,
+};

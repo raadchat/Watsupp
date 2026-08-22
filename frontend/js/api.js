@@ -103,8 +103,12 @@ const api = {
 
   sendBulkMessages: (formData) => apiRequest('/messages/bulk', { method: 'POST', body: formData, isFormData: true }),
   getMessagesStatus: () => apiRequest('/messages/status'),
+  getOptedInCount: () => apiRequest('/messages/opted-in-count'),
 
   getWhatsAppSettings: () => apiRequest('/settings/whatsapp'),
   saveWhatsAppSettings: (settings) => apiRequest('/settings/whatsapp', { method: 'PUT', body: settings }),
   retestWhatsAppConnection: () => apiRequest('/settings/whatsapp/test', { method: 'POST' }),
+
+  getBotSettings: () => apiRequest('/bot-settings/welcome'),
+  saveBotSettings: (formData) => apiRequest('/bot-settings/welcome', { method: 'PUT', body: formData, isFormData: true }),
 };

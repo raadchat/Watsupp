@@ -39,6 +39,10 @@ const schema = fs.readFileSync(schemaPath, 'utf8');
 db.exec(schema);
 
 ensureCategoriesMigration(db);
+ensureParentCategoryMigration(db);
+ensureServiceReplyTypeMigration(db);
+ensureCustomerColumnsMigration(db);
+ensureCustomerStateExpansionMigration(db);
 
 console.log(`[database] متصل بقاعدة البيانات: ${dbPath}`);
 
@@ -83,4 +87,127 @@ function ensureCategoriesMigration(database) {
   }
 }
 
+/**
+ * ترقية تلقائية: تضيف عمود categories.parent_category_id (تداخل أقسام
+ * داخل أقسام بلا حد للعمق) إن لم يكن موجوداً. NULL = قسم رئيسي، فكل
+ * الأقسام الموجودة مسبقاً تبقى كأقسام رئيسية تلقائياً وبأمان بعد الترقية.
+ */
+function ensureParentCategoryMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(categories)').all();
+  const hasParentId = columns.some((c) => c.name === 'parent_category_id');
+  if (hasParentId) return;
+
+  console.log('[database] ترقية: إضافة categories.parent_category_id (دعم أقسام متداخلة)...');
+  database.exec('ALTER TABLE categories ADD COLUMN parent_category_id INTEGER REFERENCES categories(id)');
+  console.log('[database] تمت الترقية — كل الأقسام الحالية بقيت أقساماً رئيسية.');
+}
+
+/**
+ * ترقية تلقائية: تضيف أعمدة "نوع رد الخدمة" (رد معلومة ثابتة أو طلب بيانات
+ * من العميل بتحقق شكل/بادئة محدَّدين، مع إمكانية ربط برد آلي من API خارجي).
+ * القيمة الافتراضية للخدمات الموجودة مسبقاً هي COLLECT_INPUT عمداً — تحافظ
+ * على سلوكها الحالي (طلب بيانات من العميل) دون أي تغيير مفاجئ بعد الترقية.
+ * الخدمات الجديدة تحدِّد النوع صراحة من نموذج اللوحة (افتراضها INFO هناك).
+ */
+function ensureServiceReplyTypeMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(services)').all();
+  const hasReplyType = columns.some((c) => c.name === 'reply_type');
+  if (hasReplyType) return;
+
+  console.log('[database] ترقية: إضافة أعمدة نوع رد الخدمة (reply_type وما يتعلق به)...');
+  database.exec(
+    "ALTER TABLE services ADD COLUMN reply_type TEXT NOT NULL DEFAULT 'COLLECT_INPUT' CHECK (reply_type IN ('INFO','COLLECT_INPUT'))"
+  );
+  database.exec(
+    "ALTER TABLE services ADD COLUMN input_format TEXT CHECK (input_format IN ('NUMBERS','ALPHANUMERIC','LETTERS') OR input_format IS NULL)"
+  );
+  database.exec('ALTER TABLE services ADD COLUMN input_prefix TEXT');
+  database.exec('ALTER TABLE services ADD COLUMN validation_error_message TEXT');
+  database.exec('ALTER TABLE services ADD COLUMN external_api_url TEXT');
+  database.exec('ALTER TABLE services ADD COLUMN external_service_code TEXT');
+  console.log('[database] تمت الترقية — الخدمات الحالية بقيت بسلوكها الأصلي (طلب بيانات من العميل).');
+}
+
 module.exports = db;
+
+/**
+ * ترقية تلقائية: تضيف customers.notifications_opt_in (موافقة تلقي الإشعارات
+ * بعد نهاية المحادثة) و customers.assigned_agent_id (وكيل خدمة العملاء
+ * المُعيَّن لهذا العميل حالياً) — كلاهما عبر ALTER TABLE بسيط، بلا حاجة لإعادة
+ * بناء الجدول (على عكس ensureCustomerStateExpansionMigration أدناه).
+ */
+function ensureCustomerColumnsMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(customers)').all();
+  const names = columns.map((c) => c.name);
+
+  if (!names.includes('notifications_opt_in')) {
+    console.log('[database] ترقية: إضافة customers.notifications_opt_in...');
+    database.exec(
+      "ALTER TABLE customers ADD COLUMN notifications_opt_in TEXT NOT NULL DEFAULT 'pending' CHECK (notifications_opt_in IN ('pending','opted_in','opted_out'))"
+    );
+  }
+
+  if (!names.includes('assigned_agent_id')) {
+    console.log('[database] ترقية: إضافة customers.assigned_agent_id...');
+    database.exec('ALTER TABLE customers ADD COLUMN assigned_agent_id INTEGER REFERENCES admins(id)');
+  }
+}
+
+/**
+ * ترقية تلقائية أكثر تعقيداً: قيد CHECK على conversation_state لا يمكن
+ * تعديله بـ ALTER TABLE ADD COLUMN عادية (SQLite لا يدعم تعديل قيود CHECK
+ * قائمة مباشرة)، فنعيد بناء الجدول بالكامل بالنمط القياسي في SQLite:
+ * إنشاء جدول جديد بالقيد المحدَّث → نسخ كل البيانات → حذف القديم → إعادة
+ * تسمية الجديد. تعمل داخل معاملة واحدة (BEGIN/COMMIT) فإما تنجح بالكامل
+ * أو لا يتغيّر شيء إطلاقاً. يجب أن تُستدعى بعد ensureCustomerColumnsMigration
+ * لأن النسخ يتضمّن الأعمدة التي تلك الدالة تضيفها.
+ */
+function ensureCustomerStateExpansionMigration(database) {
+  const row = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get();
+  if (row && row.sql.includes('AWAITING_NOTIFICATION_OPT_IN')) return; // مُرحَّلة مسبقاً
+
+  console.log('[database] ترقية: توسيع حالات محادثة العملاء (إعادة بناء جدول customers)...');
+
+  database.exec('BEGIN');
+  try {
+    database.exec(`
+      CREATE TABLE customers_new (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone_number        TEXT NOT NULL UNIQUE,
+        last_contact        TEXT,
+        conversation_state  TEXT NOT NULL DEFAULT 'MAIN_MENU'
+                              CHECK (conversation_state IN
+                                ('MAIN_MENU','CATEGORY_LIST','SERVICE_LIST','SERVICE_SELECTED',
+                                 'WAITING_FOR_DATA','AWAITING_NOTIFICATION_OPT_IN',
+                                 'CUSTOMER_SERVICE_WAITING','CUSTOMER_SERVICE_ACTIVE','CUSTOMER_SERVICE_RATING',
+                                 'COMPLETED')),
+        status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'blocked')),
+        last_selected_service_id INTEGER REFERENCES services(id),
+        notifications_opt_in TEXT NOT NULL DEFAULT 'pending' CHECK (notifications_opt_in IN ('pending','opted_in','opted_out')),
+        assigned_agent_id   INTEGER REFERENCES admins(id),
+        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
+    database.exec(`
+      INSERT INTO customers_new
+        (id, phone_number, last_contact, conversation_state, status,
+         last_selected_service_id, notifications_opt_in, assigned_agent_id, created_at, updated_at)
+      SELECT
+        id, phone_number, last_contact, conversation_state, status,
+        last_selected_service_id, notifications_opt_in, assigned_agent_id, created_at, updated_at
+      FROM customers
+    `);
+
+    database.exec('DROP TABLE customers');
+    database.exec('ALTER TABLE customers_new RENAME TO customers');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number)');
+
+    database.exec('COMMIT');
+    console.log('[database] تمت الترقية — كل بيانات العملاء محفوظة كاملة.');
+  } catch (err) {
+    database.exec('ROLLBACK');
+    throw err;
+  }
+}

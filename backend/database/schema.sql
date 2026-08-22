@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 
 CREATE INDEX IF NOT EXISTS idx_categories_status ON categories(status);
+-- ملاحظة: عمود categories.parent_category_id (تداخل أقسام داخل أقسام بلا حد
+-- عمق) يُضاف عبر ترقية تلقائية في db.js (ensureParentCategoryMigration)
+-- بنفس أسلوب category_id في services أدناه — NULL يعني "قسم رئيسي".
 
 -- ---------------------------------------------------------
 -- Services: كتالوج الخدمات الذي يقرأ منه البوت مباشرة
@@ -51,11 +54,12 @@ CREATE TABLE IF NOT EXISTS services (
 );
 
 CREATE INDEX IF NOT EXISTS idx_services_status ON services(status);
--- ملاحظة: عمود services.category_id (مرجع رقمي داخلي إلى categories.id) يُضاف
--- عبر ترقية تلقائية في db.js (ensureCategoriesMigration) وليس هنا، لأن
--- CREATE TABLE IF NOT EXISTS لا يُعدّل جدولاً موجوداً مسبقاً لدى من ثبّت
--- المشروع قبل هذه الميزة. أي تثبيت جديد يمر بنفس المسار أيضاً فيحصل على
--- العمود فوراً بعد أول تشغيل — راجع db.js للتفاصيل.
+-- ملاحظة: الأعمدة التالية تُضاف عبر ترقيات تلقائية في db.js وليس هنا (نفس
+-- سبب category_id أعلاه — CREATE TABLE IF NOT EXISTS لا يُعدّل جدولاً قائماً):
+--   category_id (مرجع رقمي لـ categories.id)                — ensureCategoriesMigration
+--   reply_type / input_format / input_prefix /
+--   validation_error_message / external_api_url /
+--   external_service_code (نوع الرد ونموذج جمع بيانات العميل) — ensureServiceReplyTypeMigration
 
 -- ---------------------------------------------------------
 -- Customers: عملاء واتساب وحالة محادثتهم الحالية
@@ -66,7 +70,10 @@ CREATE TABLE IF NOT EXISTS customers (
   last_contact        TEXT,
   conversation_state  TEXT NOT NULL DEFAULT 'MAIN_MENU'
                         CHECK (conversation_state IN
-                          ('MAIN_MENU','CATEGORY_LIST','SERVICE_LIST','SERVICE_SELECTED','WAITING_FOR_DATA','COMPLETED')),
+                          ('MAIN_MENU','CATEGORY_LIST','SERVICE_LIST','SERVICE_SELECTED',
+                           'WAITING_FOR_DATA','AWAITING_NOTIFICATION_OPT_IN',
+                           'CUSTOMER_SERVICE_WAITING','CUSTOMER_SERVICE_ACTIVE','CUSTOMER_SERVICE_RATING',
+                           'COMPLETED')),
   status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'blocked')),
   last_selected_service_id INTEGER REFERENCES services(id),
   created_at          TEXT NOT NULL DEFAULT (datetime('now')),
@@ -74,6 +81,9 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
+-- ملاحظة: notifications_opt_in (موافقة تلقي الإشعارات) و assigned_agent_id
+-- (وكيل خدمة العملاء المُعيَّن) يُضافان عبر ترقيات تلقائية في db.js، بنفس
+-- سبب كل ترقيات هذا الملف: CREATE TABLE IF NOT EXISTS لا تُعدّل جدولاً قائماً.
 
 -- ---------------------------------------------------------
 -- Messages: سجل كل رسالة واردة/صادرة مرتبطة بعميل
@@ -136,4 +146,16 @@ CREATE TABLE IF NOT EXISTS whatsapp_settings (
   last_tested_at      TEXT,
   last_test_result    TEXT,
   updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ---------------------------------------------------------
+-- Bot Settings: صف واحد فقط (id مقفل على 1) — محتوى سلوك البوت القابل
+-- للتعديل من لوحة التحكم (رسالة الترحيب حالياً، ومكان طبيعي لأي محتوى
+-- بوت مشابه لاحقاً). welcome_image_filename يشير لملف داخل frontend/uploads/
+-- ---------------------------------------------------------
+CREATE TABLE IF NOT EXISTS bot_settings (
+  id                      INTEGER PRIMARY KEY CHECK (id = 1),
+  welcome_message         TEXT,
+  welcome_image_filename  TEXT,
+  updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );

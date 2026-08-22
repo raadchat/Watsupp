@@ -4,7 +4,5 @@ backend/database/*.db
 backend/database/*.db-journal
 backend/database/*.db-wal
 backend/database/*.db-shm
-frontend/uploads/*
-!frontend/uploads/.gitkeep
 npm-debug.log*
 .DS_Store

@@ -140,6 +140,37 @@ button {
   box-shadow: 0 0 0 4px rgba(31, 138, 99, 0.25);
 }
 
+/* أبعاد ثابتة للشعار المرفوع (logo.jpg) بغض النظر عن حجمه الأصلي —
+   يمنع أي تشوّه أو كسراً في تخطيط الصفحة مهما كانت أبعاد الملف المرفوع */
+.brand-logo {
+  height: 42px;
+  width: auto;
+  max-width: 170px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-brand .brand-logo {
+  height: 28px;
+  max-width: 120px;
+}
+
+.page-credit {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin: 28px 0 0;
+}
+
+.sidebar-credit {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--sidebar-muted);
+  margin-top: 10px;
+  opacity: 0.7;
+}
+
 .brand-copy {
   z-index: 1;
   max-width: 420px;

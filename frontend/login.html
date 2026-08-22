@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>تسجيل الدخول — لوحة تحكم بوت واتساب</title>
+  <title>تسجيل الدخول — شركة دادية للصرافة والتحويلات</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
@@ -13,8 +13,10 @@
     <!-- لوحة الهوية -->
     <aside class="login-brand">
       <div class="brand-mark">
-        <span class="dot"></span>
-        <span>لوحة بوت واتساب</span>
+        <!-- ضع ملف الشعار باسم logo.jpg داخل مجلد frontend/ (بجانب login.html) ليظهر هنا تلقائياً بالحجم المضبوط.
+             onerror يُخفي الصورة بأمان إن لم يُرفع الملف بعد، فلا تظهر أيقونة "صورة مكسورة". -->
+        <img src="logo.jpg" alt="شركة دادية للصرافة والتحويلات" class="brand-logo" style="max-width: 100%; height: auto; object-fit: contain; display: block; margin: 0 auto; border-radius: 8px;"/>
+        <span>شركة دادية للصرافة والتحويلات</span>
       </div>
 
       <div class="brand-copy">
@@ -52,6 +54,8 @@
             <span class="btn-label">دخول</span>
           </button>
         </form>
+
+        <p class="page-credit">تصميم: م. رعد الهمزة — 771148050</p>
       </div>
     </div>
   </div>

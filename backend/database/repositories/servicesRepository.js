@@ -7,6 +7,10 @@
 // category_id هنا عمود رقمي (مرجع إلى categories.id الداخلي)، مطابقاً لنفس
 // اصطلاح customers.last_selected_service_id → services.id. القراءات تُلحق
 // (JOIN) اسم القسم للعرض في اللوحة عبر category_name.
+//
+// reply_type ('INFO' | 'COLLECT_INPUT') وما يتبعه (input_format/input_prefix/
+// validation_error_message/external_api_url/external_service_code) يحدّدان
+// سلوك conversationService عند اختيار العميل لهذه الخدمة — راجع ذلك الملف.
 
 const db = require('../db');
 
@@ -26,7 +30,7 @@ function findActive() {
     .all();
 }
 
-/** خدمات قسم واحد فقط — المستوى الثاني من القائمة بعد اختيار العميل لقسم. */
+/** خدمات قسم واحد فقط — المستوى الأخير من القائمة بعد الوصول لقسم "ورقة". */
 function findActiveByCategoryId(categoryDbId) {
   return db
     .prepare(
@@ -45,22 +49,77 @@ function findByServiceId(serviceId) {
   return db.prepare(`${SELECT_WITH_CATEGORY} WHERE services.service_id = ?`).get(serviceId);
 }
 
-function create({ service_id, name, description, category_id, status }) {
+function create({
+  service_id,
+  name,
+  description,
+  category_id,
+  status,
+  reply_type,
+  input_format,
+  input_prefix,
+  validation_error_message,
+  external_api_url,
+  external_service_code,
+}) {
   const info = db
     .prepare(
-      `INSERT INTO services (service_id, name, description, category_id, status)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO services (
+         service_id, name, description, category_id, status,
+         reply_type, input_format, input_prefix, validation_error_message,
+         external_api_url, external_service_code
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(service_id, name, description || null, category_id || null, status || 'active');
+    .run(
+      service_id,
+      name,
+      description || null,
+      category_id || null,
+      status || 'active',
+      reply_type || 'INFO', // افتراض الخدمات الجديدة: رد ثابت جاهز، أبسط حالة ولا تحتاج إعداداً إضافياً
+      input_format || null,
+      input_prefix || null,
+      validation_error_message || null,
+      external_api_url || null,
+      external_service_code || null
+    );
   return findById(info.lastInsertRowid);
 }
 
-function update(id, { name, description, category_id, status }) {
+function update(
+  id,
+  {
+    name,
+    description,
+    category_id,
+    status,
+    reply_type,
+    input_format,
+    input_prefix,
+    validation_error_message,
+    external_api_url,
+    external_service_code,
+  }
+) {
   db.prepare(
     `UPDATE services
-     SET name = ?, description = ?, category_id = ?, status = ?, updated_at = datetime('now')
+     SET name = ?, description = ?, category_id = ?, status = ?,
+         reply_type = ?, input_format = ?, input_prefix = ?, validation_error_message = ?,
+         external_api_url = ?, external_service_code = ?, updated_at = datetime('now')
      WHERE id = ?`
-  ).run(name, description || null, category_id || null, status, id);
+  ).run(
+    name,
+    description || null,
+    category_id || null,
+    status,
+    reply_type || 'INFO',
+    input_format || null,
+    input_prefix || null,
+    validation_error_message || null,
+    external_api_url || null,
+    external_service_code || null,
+    id
+  );
   return findById(id);
 }
 

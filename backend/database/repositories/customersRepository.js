@@ -70,6 +70,25 @@ function updateLastContact(id) {
   ).run(id);
 }
 
+function updateNotificationOptIn(id, optIn) {
+  db.prepare(
+    `UPDATE customers SET notifications_opt_in = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(optIn, id);
+  return findById(id);
+}
+
+function countOptedIn() {
+  return db.prepare("SELECT COUNT(*) AS count FROM customers WHERE notifications_opt_in = 'opted_in'").get().count;
+}
+
+/** أرقام هواتف العملاء الموافقين على تلقي الإشعارات — تُستخدم كمصدر أرقام مباشر في الإرسال الجماعي. */
+function findOptedInPhoneNumbers() {
+  return db
+    .prepare("SELECT phone_number FROM customers WHERE notifications_opt_in = 'opted_in'")
+    .all()
+    .map((r) => r.phone_number);
+}
+
 module.exports = {
   findAll,
   findById,
@@ -77,4 +96,7 @@ module.exports = {
   create,
   updateState,
   updateLastContact,
+  updateNotificationOptIn,
+  countOptedIn,
+  findOptedInPhoneNumbers,
 };

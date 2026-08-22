@@ -14,4 +14,7 @@ router.post('/bulk', messagesController.upload.single('file'), messagesControlle
 // GET /api/messages/status
 router.get('/status', messagesController.getMessagesStatus);
 
+// GET /api/messages/opted-in-count
+router.get('/opted-in-count', messagesController.getOptedInCount);
+
 module.exports = router;

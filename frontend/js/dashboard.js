@@ -14,6 +14,7 @@ const SECTION_TITLES = {
   services: 'الخدمات',
   customers: 'العملاء',
   bulk: 'الرسائل الجماعية',
+  'bot-settings': 'إعدادات البوت',
   settings: 'الاتصال بواتساب',
 };
 
@@ -91,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupBulkSection();
   setupDeleteModal();
   setupSettingsSection();
+  setupBotSettingsSection();
 
   loadCategories(); // القسم الافتراضي عند فتح اللوحة (المستوى الأول في قائمة واتساب)
 });
@@ -123,6 +125,7 @@ function showSection(name) {
     stopJobsPolling();
   }
   if (name === 'settings') loadSettings();
+  if (name === 'bot-settings') loadBotSettings();
 }
 
 function setupMobileSidebar() {
@@ -200,6 +203,7 @@ function renderCategoryRow(c) {
     <tr>
       <td data-label="المعرف"><span class="mono">${escapeHtml(c.category_id)}</span></td>
       <td data-label="اسم القسم" class="cell-title">${escapeHtml(c.name)}</td>
+      <td data-label="القسم الأب" class="cell-muted">${escapeHtml(c.parent_name || '—')}</td>
       <td data-label="الوصف">${escapeHtml(truncateText(c.description, 60))}</td>
       <td data-label="الترتيب" class="mono">${c.display_order}</td>
       <td data-label="الحالة"><span class="status-badge ${c.status}">${liveDot}${statusLabel}</span></td>
@@ -214,11 +218,60 @@ function renderCategoryRow(c) {
   `;
 }
 
-function openCategoryModal(category = null) {
+/** يجمع كل أحفاد قسم (أبناءه، وأبناء أبنائه، إلخ) لاستبعادهم من قائمة "القسم الأب" فيمنع الحلقات من واجهة اللوحة نفسها. */
+function getDescendantIds(categoryId) {
+  const ids = new Set();
+  let frontier = [categoryId];
+  while (frontier.length > 0) {
+    const next = [];
+    categoriesCache
+      .filter((c) => frontier.includes(c.parent_category_id))
+      .forEach((c) => {
+        if (!ids.has(c.id)) {
+          ids.add(c.id);
+          next.push(c.id);
+        }
+      });
+    frontier = next;
+  }
+  return ids;
+}
+
+async function populateCategoryParentOptions(currentCategoryId, selectedParentId) {
+  const select = document.getElementById('category-parent');
+  select.innerHTML = '<option value="">بدون — قسم رئيسي</option>';
+
+  try {
+    const result = await api.getCategories();
+    categoriesCache = result.data;
+
+    const excluded = currentCategoryId ? getDescendantIds(currentCategoryId) : new Set();
+    if (currentCategoryId) excluded.add(currentCategoryId); // لا يمكن أن يكون القسم أباً لنفسه
+
+    categoriesCache
+      .filter((c) => !excluded.has(c.id))
+      .forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        select.appendChild(opt);
+      });
+  } catch (err) {
+    showToast('تعذّر تحميل قائمة الأقسام', 'error');
+  }
+
+  if (selectedParentId) {
+    select.value = String(selectedParentId);
+  }
+}
+
+async function openCategoryModal(category = null) {
   const form = document.getElementById('category-form');
   form.reset();
 
   const idField = document.getElementById('category-id');
+
+  await populateCategoryParentOptions(category ? category.id : null, category ? category.parent_category_id : null);
 
   if (category) {
     document.getElementById('category-modal-title').textContent = 'تعديل القسم';
@@ -247,6 +300,7 @@ async function handleCategoryFormSubmit(e) {
   e.preventDefault();
   const saveBtn = document.getElementById('category-save-btn');
   const dbId = document.getElementById('category-db-id').value;
+  const parentValue = document.getElementById('category-parent').value;
 
   const payload = {
     category_id: document.getElementById('category-id').value.trim(),
@@ -254,6 +308,7 @@ async function handleCategoryFormSubmit(e) {
     description: document.getElementById('category-description').value.trim(),
     display_order: Number(document.getElementById('category-display-order').value) || 0,
     status: document.getElementById('category-status').value,
+    parent_category_id: parentValue ? Number(parentValue) : null,
   };
 
   setBtnLoading(saveBtn, true);
@@ -284,6 +339,7 @@ function setupServicesSection() {
   document.getElementById('service-modal-close').addEventListener('click', closeServiceModal);
   document.getElementById('service-cancel-btn').addEventListener('click', closeServiceModal);
   document.getElementById('service-form').addEventListener('submit', handleServiceFormSubmit);
+  document.getElementById('service-reply-type').addEventListener('change', updateServiceReplyTypeUI);
 
   document.getElementById('services-tbody').addEventListener('click', (e) => {
     const editBtn = e.target.closest('.edit-service-btn');
@@ -293,6 +349,16 @@ function setupServicesSection() {
   });
 }
 
+/** يُظهر/يُخفي حقول COLLECT_INPUT ويُبدّل تسمية "الوصف" حسب نوع الرد المُختار. */
+function updateServiceReplyTypeUI() {
+  const isCollectInput = document.getElementById('service-reply-type').value === 'COLLECT_INPUT';
+  document.getElementById('service-collect-input-fields').classList.toggle('hidden', !isCollectInput);
+  document.getElementById('service-description-label').textContent = isCollectInput ? 'تفاصيل الخدمة (تُعرض قبل طلب البيانات)' : 'نص الرد';
+  document.getElementById('service-description-hint').textContent = isCollectInput
+    ? 'يُعرض هذا النص للعميل، ثم يُطلب منه إرسال بياناته.'
+    : 'هذا النص يُرسَل للعميل كإجابة مباشرة.';
+}
+
 function findServiceById(id) {
   return servicesCache.find((s) => String(s.id) === String(id));
 }
@@ -300,7 +366,7 @@ function findServiceById(id) {
 async function loadServices() {
   const tbody = document.getElementById('services-tbody');
   const emptyEl = document.getElementById('services-empty');
-  tbody.innerHTML = renderSkeletonRows(8, 5);
+  tbody.innerHTML = renderSkeletonRows(9, 5);
   emptyEl.classList.add('hidden');
 
   try {
@@ -322,10 +388,12 @@ async function loadServices() {
 function renderServiceRow(s) {
   const statusLabel = s.status === 'active' ? 'نشطة' : 'غير نشطة';
   const liveDot = s.status === 'active' ? '<span class="live-dot"></span>' : '';
+  const typeLabel = s.reply_type === 'COLLECT_INPUT' ? 'يطلب بيانات' : 'رد ثابت';
   return `
     <tr>
       <td data-label="المعرف"><span class="mono">${escapeHtml(s.service_id)}</span></td>
       <td data-label="اسم الخدمة" class="cell-title">${escapeHtml(s.name)}</td>
+      <td data-label="النوع" class="cell-muted">${escapeHtml(typeLabel)}</td>
       <td data-label="الوصف">${escapeHtml(truncateText(s.description, 60))}</td>
       <td data-label="القسم">${escapeHtml(s.category_name || '—')}</td>
       <td data-label="الحالة"><span class="status-badge ${s.status}">${liveDot}${statusLabel}</span></td>
@@ -380,12 +448,20 @@ async function openServiceModal(service = null) {
     document.getElementById('service-name').value = service.name;
     document.getElementById('service-description').value = service.description || '';
     document.getElementById('service-status').value = service.status;
+    document.getElementById('service-reply-type').value = service.reply_type || 'INFO';
+    document.getElementById('service-input-format').value = service.input_format || '';
+    document.getElementById('service-input-prefix').value = service.input_prefix || '';
+    document.getElementById('service-validation-error').value = service.validation_error_message || '';
+    document.getElementById('service-external-api-url').value = service.external_api_url || '';
+    document.getElementById('service-external-service-code').value = service.external_service_code || '';
   } else {
     document.getElementById('service-modal-title').textContent = 'إضافة خدمة';
     document.getElementById('service-db-id').value = '';
     idField.disabled = false;
+    document.getElementById('service-reply-type').value = 'INFO';
   }
 
+  updateServiceReplyTypeUI();
   document.getElementById('service-modal-overlay').classList.remove('hidden');
 }
 
@@ -398,6 +474,7 @@ async function handleServiceFormSubmit(e) {
   const saveBtn = document.getElementById('service-save-btn');
   const dbId = document.getElementById('service-db-id').value;
   const categoryValue = document.getElementById('service-category').value;
+  const replyType = document.getElementById('service-reply-type').value;
 
   const payload = {
     service_id: document.getElementById('service-id').value.trim(),
@@ -405,6 +482,12 @@ async function handleServiceFormSubmit(e) {
     description: document.getElementById('service-description').value.trim(),
     category_id: categoryValue ? Number(categoryValue) : null,
     status: document.getElementById('service-status').value,
+    reply_type: replyType,
+    input_format: document.getElementById('service-input-format').value || null,
+    input_prefix: document.getElementById('service-input-prefix').value.trim() || null,
+    validation_error_message: document.getElementById('service-validation-error').value.trim() || null,
+    external_api_url: document.getElementById('service-external-api-url').value.trim() || null,
+    external_service_code: document.getElementById('service-external-service-code').value.trim() || null,
   };
 
   setBtnLoading(saveBtn, true);
@@ -580,7 +663,25 @@ function setupBulkSection() {
     }
   });
 
+  document.getElementById('bulk-recipient-type').addEventListener('change', updateBulkRecipientTypeUI);
   document.getElementById('bulk-form').addEventListener('submit', handleBulkFormSubmit);
+}
+
+/** يُظهر/يُخفي حقول الإدخال اليدوي حسب نوع المستلمين المُختار، ويُحدّث عدد الموافقين المعروض. */
+function updateBulkRecipientTypeUI() {
+  const isOptedIn = document.getElementById('bulk-recipient-type').value === 'opted_in';
+  document.getElementById('bulk-manual-fields').classList.toggle('hidden', isOptedIn);
+  document.getElementById('bulk-opted-in-notice').classList.toggle('hidden', !isOptedIn);
+}
+
+async function refreshOptedInCount() {
+  try {
+    const result = await api.getOptedInCount();
+    document.getElementById('opted-in-count-label').textContent = result.data.count;
+    document.getElementById('opted-in-count-notice').textContent = result.data.count;
+  } catch (err) {
+    // فشل صامت — ليس حرجاً لعرض بقية القسم
+  }
 }
 
 function resetFileDrop() {
@@ -592,31 +693,40 @@ async function handleBulkFormSubmit(e) {
   e.preventDefault();
   const submitBtn = document.getElementById('bulk-submit');
 
+  const recipientType = document.getElementById('bulk-recipient-type').value;
   const message = document.getElementById('bulk-message').value.trim();
-  const numbersText = document.getElementById('bulk-numbers').value.trim();
-  const fileInputEl = document.getElementById('bulk-file');
-  const file = fileInputEl.files[0];
 
   if (!message) {
     showToast('نص الرسالة مطلوب', 'error');
     return;
   }
-  if (!numbersText && !file) {
-    showToast('أدخل أرقاماً يدوياً أو ارفع ملف أرقام', 'error');
-    return;
-  }
 
   const formData = new FormData();
   formData.append('message', message);
-  if (numbersText) formData.append('phone_numbers', numbersText);
-  if (file) formData.append('file', file);
+  formData.append('recipient_type', recipientType);
+
+  const fileInputEl = document.getElementById('bulk-file');
+
+  if (recipientType === 'opted_in') {
+    // لا حاجة لأي أرقام هنا — الخادم يجلبها مباشرة من العملاء الموافقين
+  } else {
+    const numbersText = document.getElementById('bulk-numbers').value.trim();
+    const file = fileInputEl.files[0];
+    if (!numbersText && !file) {
+      showToast('أدخل أرقاماً يدوياً أو ارفع ملف أرقام', 'error');
+      return;
+    }
+    if (numbersText) formData.append('phone_numbers', numbersText);
+    if (file) formData.append('file', file);
+  }
 
   setBtnLoading(submitBtn, true);
   try {
     const result = await api.sendBulkMessages(formData);
     showToast(`بدأ الإرسال إلى ${result.data.total_count} رقم على التوالي`);
 
-    document.getElementById('bulk-form').reset();
+    document.getElementById('bulk-message').value = '';
+    document.getElementById('bulk-numbers').value = '';
     fileInputEl.value = '';
     resetFileDrop();
 
@@ -629,6 +739,9 @@ async function handleBulkFormSubmit(e) {
 }
 
 async function openBulkSection() {
+  refreshOptedInCount();
+  updateBulkRecipientTypeUI();
+
   try {
     const result = await api.getMessagesStatus();
     const ongoing = result.data.find((j) => j.status === 'pending' || j.status === 'processing');
@@ -853,5 +966,96 @@ async function handleRetestClick() {
     showToast(err.message, 'error');
   } finally {
     setBtnLoading(btn, false);
+  }
+}
+
+// =====================================================================
+// قسم إعدادات البوت (رسالة الترحيب — أي رسالة أولى/غير مفهومة من العميل)
+// =====================================================================
+
+let welcomeImageMarkedForRemoval = false;
+
+function setupBotSettingsSection() {
+  const dropEl = document.getElementById('welcome-image-drop');
+  const inputEl = document.getElementById('welcome-image-input');
+
+  dropEl.addEventListener('click', () => inputEl.click());
+  inputEl.addEventListener('change', () => {
+    const file = inputEl.files[0];
+    if (!file) return;
+    welcomeImageMarkedForRemoval = false;
+    const reader = new FileReader();
+    reader.onload = () => showWelcomeImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('remove-welcome-image-btn').addEventListener('click', () => {
+    welcomeImageMarkedForRemoval = true;
+    inputEl.value = '';
+    hideWelcomeImagePreview();
+  });
+
+  document.getElementById('bot-settings-form').addEventListener('submit', handleBotSettingsFormSubmit);
+}
+
+function showWelcomeImagePreview(src) {
+  document.getElementById('welcome-image-preview').src = src;
+  document.getElementById('welcome-image-preview-wrap').classList.remove('hidden');
+  document.getElementById('welcome-image-drop').classList.add('hidden');
+}
+
+function hideWelcomeImagePreview() {
+  document.getElementById('welcome-image-preview-wrap').classList.add('hidden');
+  document.getElementById('welcome-image-drop').classList.remove('hidden');
+}
+
+async function loadBotSettings() {
+  try {
+    const result = await api.getBotSettings();
+    document.getElementById('welcome-message-text').value = result.data.welcome_message || '';
+    welcomeImageMarkedForRemoval = false;
+    document.getElementById('welcome-image-input').value = '';
+
+    if (result.data.welcome_image_url) {
+      showWelcomeImagePreview(result.data.welcome_image_url);
+    } else {
+      hideWelcomeImagePreview();
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function handleBotSettingsFormSubmit(e) {
+  e.preventDefault();
+  const saveBtn = document.getElementById('bot-settings-save-btn');
+
+  const message = document.getElementById('welcome-message-text').value.trim();
+  if (!message) {
+    showToast('نص رسالة الترحيب مطلوب', 'error');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('welcome_message', message);
+
+  const file = document.getElementById('welcome-image-input').files[0];
+  if (file) {
+    formData.append('image', file);
+  } else if (welcomeImageMarkedForRemoval) {
+    formData.append('remove_image', 'true');
+  }
+  // وإلا: لا نرفق شيئاً متعلقاً بالصورة، فيُبقي الخادم على الصورة المحفوظة كما هي
+
+  setBtnLoading(saveBtn, true);
+  try {
+    await api.saveBotSettings(formData);
+    showToast('تم حفظ رسالة الترحيب بنجاح');
+    welcomeImageMarkedForRemoval = false;
+    loadBotSettings(); // إعادة تحميل لعرض رابط الصورة الفعلي المحفوظ (بدل معاينة base64 المؤقتة)
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    setBtnLoading(saveBtn, false);
   }
 }

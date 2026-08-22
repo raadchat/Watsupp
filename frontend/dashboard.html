@@ -14,8 +14,8 @@
 
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-brand">
-        <span class="dot"></span>
-        <span>لوحة بوت واتساب</span>
+        <img src="logo.jpg" alt="شركة دادية للصرافة والتحويلات" class="brand-logo" onerror="this.style.display='none'" />
+        <span>دادية للصرافة</span>
       </div>
 
       <nav class="nav-group">
@@ -31,6 +31,9 @@
         <button class="nav-item" data-section="bulk">
           <span>📣 الرسائل الجماعية</span>
         </button>
+        <button class="nav-item" data-section="bot-settings">
+          <span>💬 إعدادات البوت</span>
+        </button>
         <button class="nav-item" data-section="settings">
           <span>🔌 الاتصال بواتساب</span>
         </button>
@@ -42,6 +45,7 @@
           <strong id="admin-username">—</strong>
         </div>
         <button id="logout-btn" class="logout-btn">تسجيل الخروج</button>
+        <p class="sidebar-credit">تصميم: م. رعد الهمزة — 771148050</p>
       </div>
     </aside>
 
@@ -73,6 +77,7 @@
                   <tr>
                     <th>المعرف</th>
                     <th>اسم القسم</th>
+                    <th>القسم الأب</th>
                     <th>الوصف</th>
                     <th>الترتيب</th>
                     <th>الحالة</th>
@@ -109,6 +114,7 @@
                   <tr>
                     <th>المعرف</th>
                     <th>اسم الخدمة</th>
+                    <th>النوع</th>
                     <th>الوصف</th>
                     <th>القسم</th>
                     <th>الحالة</th>
@@ -187,20 +193,35 @@
             <div class="card card-pad">
               <form id="bulk-form">
                 <div class="field">
+                  <label for="bulk-recipient-type">المستلمون</label>
+                  <select id="bulk-recipient-type">
+                    <option value="manual">أرقام يدوية / ملف (كالمعتاد)</option>
+                    <option value="opted_in">العملاء الموافقون على الإشعارات (<span id="opted-in-count-label">0</span>)</option>
+                  </select>
+                </div>
+
+                <div class="field">
                   <label for="bulk-message">نص الرسالة</label>
                   <textarea id="bulk-message" rows="4" placeholder="اكتب نص الرسالة التي ستُرسل لجميع الأرقام…" required></textarea>
                 </div>
 
-                <div class="field">
-                  <label for="bulk-file">رفع ملف أرقام (اختياري)</label>
-                  <input type="file" id="bulk-file" accept=".txt,.csv" class="hidden" />
-                  <div id="file-drop" class="file-drop">📄 اضغط لاختيار ملف نصي (رقم في كل سطر)</div>
-                  <p class="hint">يمكن أيضاً الجمع مع الأرقام المُدخلة يدوياً بالأسفل.</p>
+                <div id="bulk-manual-fields">
+                  <div class="field">
+                    <label for="bulk-file">رفع ملف أرقام (اختياري)</label>
+                    <input type="file" id="bulk-file" accept=".txt,.csv" class="hidden" />
+                    <div id="file-drop" class="file-drop">📄 اضغط لاختيار ملف نصي (رقم في كل سطر)</div>
+                    <p class="hint">يمكن أيضاً الجمع مع الأرقام المُدخلة يدوياً بالأسفل.</p>
+                  </div>
+
+                  <div class="field">
+                    <label for="bulk-numbers">أو أدخل الأرقام يدوياً</label>
+                    <textarea id="bulk-numbers" rows="4" placeholder="رقم في كل سطر، مثال:&#10;201234567890&#10;966512345678"></textarea>
+                  </div>
                 </div>
 
-                <div class="field">
-                  <label for="bulk-numbers">أو أدخل الأرقام يدوياً</label>
-                  <textarea id="bulk-numbers" rows="4" placeholder="رقم في كل سطر، مثال:&#10;201234567890&#10;966512345678"></textarea>
+                <div id="bulk-opted-in-notice" class="hidden state-block" style="padding: 24px;">
+                  <div class="state-icon">🔔</div>
+                  <p>سيُرسَل هذا لكل العملاء الموافقين على الإشعارات حالياً (<strong id="opted-in-count-notice">0</strong> عميل) — بلا حاجة لإدخال أي رقم.</p>
                 </div>
 
                 <button type="submit" id="bulk-submit" class="btn btn-primary btn-block">
@@ -249,6 +270,43 @@
                 <p>ستظهر هنا كل عملية إرسال جماعي بعد إطلاقها.</p>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- ============== قسم إعدادات البوت (رسالة الترحيب) ============== -->
+        <section id="section-bot-settings" class="section">
+          <div class="section-header">
+            <div>
+              <h2>إعدادات البوت</h2>
+              <p class="subtitle">تُرسَل هذه الرسالة تلقائياً لأي رسالة أولى أو غير مفهومة من العميل — أي كلمة أو حرف يبدأ بها المحادثة.</p>
+            </div>
+          </div>
+
+          <div class="card card-pad">
+            <form id="bot-settings-form">
+              <div class="field">
+                <label for="welcome-message-text">نص رسالة الترحيب</label>
+                <textarea id="welcome-message-text" rows="5" placeholder="مرحباً بك! اكتب &quot;الخدمات&quot; لعرض القائمة." required></textarea>
+              </div>
+
+              <div class="field">
+                <label>صورة الترحيب (اختياري)</label>
+                <input type="file" id="welcome-image-input" accept="image/*" class="hidden" />
+                <div id="welcome-image-drop" class="file-drop">📷 اضغط لاختيار صورة</div>
+                <div id="welcome-image-preview-wrap" class="hidden" style="margin-top:10px;">
+                  <img id="welcome-image-preview" alt="معاينة صورة الترحيب" style="max-width:220px; max-height:220px; border-radius:12px; border:1px solid var(--border); object-fit:contain;" />
+                  <div style="margin-top:8px;">
+                    <button type="button" id="remove-welcome-image-btn" class="btn btn-danger">إزالة الصورة</button>
+                  </div>
+                </div>
+                <p class="hint">تُرسَل الصورة كرسالة صورة على واتساب مع نص الترحيب كتعليق (caption). يتطلب أن يكون الخادم متاحاً عبر رابط عام (راجع PUBLIC_BASE_URL في .env) حتى تصل الصورة فعلياً لواتساب.</p>
+              </div>
+
+              <button type="submit" id="bot-settings-save-btn" class="btn btn-primary">
+                <span class="spinner"></span>
+                <span class="btn-label">حفظ رسالة الترحيب</span>
+              </button>
+            </form>
           </div>
         </section>
 
@@ -350,8 +408,51 @@
           </div>
 
           <div class="field">
-            <label for="service-description">الوصف</label>
+            <label for="service-reply-type">نوع الرد</label>
+            <select id="service-reply-type">
+              <option value="INFO">استعلام عن معلومة معروفة (رد ثابت فوري)</option>
+              <option value="COLLECT_INPUT">يطلب من العميل إرسال بيانات أولاً</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="service-description" id="service-description-label">نص الرد</label>
             <textarea id="service-description" rows="3"></textarea>
+            <p class="hint" id="service-description-hint">هذا النص يُرسَل للعميل كإجابة مباشرة.</p>
+          </div>
+
+          <div id="service-collect-input-fields" class="hidden">
+            <div class="field">
+              <label for="service-input-format">صيغة المدخل المطلوب من العميل</label>
+              <select id="service-input-format">
+                <option value="">بلا تحقق شكل محدَّد</option>
+                <option value="NUMBERS">أرقام فقط</option>
+                <option value="ALPHANUMERIC">أرقام وحروف</option>
+                <option value="LETTERS">حروف فقط</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="service-input-prefix">بادئة إلزامية (اختياري)</label>
+              <input type="text" id="service-input-prefix" placeholder="مثال: AC" />
+              <p class="hint">إن ضُبطت، يجب أن يبدأ إدخال العميل بها تماماً.</p>
+            </div>
+
+            <div class="field">
+              <label for="service-validation-error">رسالة الخطأ عند إدخال غير صحيح</label>
+              <textarea id="service-validation-error" rows="2" placeholder="مثال: رقم الحساب يجب أن يبدأ بـ AC ويتكوّن من أرقام وحروف فقط."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="service-external-api-url">رابط API خارجي لجلب رد حقيقي (اختياري)</label>
+              <input type="text" id="service-external-api-url" class="mono" placeholder="https://your-system.example.com/api/balance" />
+              <p class="hint">يُستدعى بعد نجاح التحقق، بجسم JSON يحوي رقم العميل والمدخل. يُتوقَّع رد بصيغة {"success":true,"message":"..."}. بلا رابط: تُرسَل رسالة شكر عامة بدلاً من ذلك.</p>
+            </div>
+
+            <div class="field">
+              <label for="service-external-service-code">كود ربط الخدمة (اختياري، لمرجعك الخاص)</label>
+              <input type="text" id="service-external-service-code" class="mono" placeholder="مثال: BALANCE_CHECK_V1" />
+            </div>
           </div>
 
           <div class="field">
@@ -400,6 +501,14 @@
           <div class="field">
             <label for="category-name">اسم القسم</label>
             <input type="text" id="category-name" required />
+          </div>
+
+          <div class="field">
+            <label for="category-parent">القسم الأب (اختياري)</label>
+            <select id="category-parent">
+              <option value="">بدون — قسم رئيسي</option>
+            </select>
+            <p class="hint">اختر قسماً هنا ليصبح هذا القسم فرعياً تابعاً له — يمكن التداخل بلا حد للعمق.</p>
           </div>
 
           <div class="field">

@@ -1,10 +1,13 @@
 // controllers/messagesController.js
-// POST /api/messages/bulk يقبل نص الرسالة + (ملف أرقام و/أو أرقام مُدخلة يدوياً)،
-// يُنشئ bulk_job واحد فوراً ويعيد معرّفه، ثم يُسلّم المعالجة الفعلية لـ messageQueue
-// في الخلفية دون حجب الاستجابة — هذا هو "لا ترسل جميع الرسائل دفعة واحدة".
+// POST /api/messages/bulk يقبل نص الرسالة + مصدر الأرقام (recipient_type):
+// 'manual' = ملف و/أو أرقام مُدخلة يدوياً (كالسابق)، أو 'opted_in' = شريحة
+// العملاء الموافقين على الإشعارات (القسم 5) مباشرة من قاعدة البيانات —
+// بلا حاجة لإدخال أي رقم يدوياً. يُنشئ bulk_job واحد فوراً ويعيد معرّفه،
+// ثم يُسلّم المعالجة الفعلية لـ messageQueue في الخلفية دون حجب الاستجابة.
 
 const multer = require('multer');
 const bulkJobsRepository = require('../database/repositories/bulkJobsRepository');
+const customersRepository = require('../database/repositories/customersRepository');
 const messageQueue = require('../services/messageQueue');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
@@ -26,7 +29,7 @@ function parsePhoneNumbers(rawText) {
 }
 
 const sendBulkMessages = asyncHandler(async (req, res) => {
-  const { message, phone_numbers } = req.body;
+  const { message, phone_numbers, recipient_type } = req.body;
 
   if (!message || !message.trim()) {
     throw new AppError(ErrorCodes.VALIDATION_ERROR, 'نص الرسالة مطلوب', 400);
@@ -34,23 +37,26 @@ const sendBulkMessages = asyncHandler(async (req, res) => {
 
   let numbers = [];
 
-  if (req.file) {
-    numbers = numbers.concat(parsePhoneNumbers(req.file.buffer.toString('utf8')));
+  if (recipient_type === 'opted_in') {
+    // شريحة جاهزة من قاعدة البيانات — لا تُلمَس بقية الطريقة القديمة (ملف/يدوي) إطلاقاً
+    numbers = customersRepository.findOptedInPhoneNumbers();
+  } else {
+    if (req.file) {
+      numbers = numbers.concat(parsePhoneNumbers(req.file.buffer.toString('utf8')));
+    }
+    if (phone_numbers) {
+      const manualText = Array.isArray(phone_numbers) ? phone_numbers.join('\n') : String(phone_numbers);
+      numbers = numbers.concat(parsePhoneNumbers(manualText));
+    }
+    numbers = [...new Set(numbers)]; // إزالة التكرار
   }
-
-  if (phone_numbers) {
-    const manualText = Array.isArray(phone_numbers) ? phone_numbers.join('\n') : String(phone_numbers);
-    numbers = numbers.concat(parsePhoneNumbers(manualText));
-  }
-
-  numbers = [...new Set(numbers)]; // إزالة التكرار
 
   if (numbers.length === 0) {
-    throw new AppError(
-      ErrorCodes.VALIDATION_ERROR,
-      'لم يتم العثور على أرقام هواتف صالحة (من الملف أو الإدخال اليدوي)',
-      400
-    );
+    const message2 =
+      recipient_type === 'opted_in'
+        ? 'لا يوجد عملاء موافقون على الإشعارات حالياً'
+        : 'لم يتم العثور على أرقام هواتف صالحة (من الملف أو الإدخال اليدوي)';
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, message2, 400);
   }
 
   const job = bulkJobsRepository.createJob({
@@ -72,4 +78,8 @@ const getMessagesStatus = asyncHandler(async (req, res) => {
   res.json({ success: true, data: jobs });
 });
 
-module.exports = { sendBulkMessages, getMessagesStatus, upload };
+const getOptedInCount = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: { count: customersRepository.countOptedIn() } });
+});
+
+module.exports = { sendBulkMessages, getMessagesStatus, getOptedInCount, upload };

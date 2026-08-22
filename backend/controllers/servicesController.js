@@ -13,19 +13,38 @@ const getAllServices = asyncHandler(async (req, res) => {
   res.json({ success: true, data: services });
 });
 
-const createService = asyncHandler(async (req, res) => {
-  const { service_id, name, description, category_id, status } = req.body;
+function extractServiceFields(body) {
+  return {
+    service_id: body.service_id,
+    name: body.name,
+    description: body.description,
+    category_id: body.category_id,
+    status: body.status,
+    reply_type: body.reply_type,
+    // input_format/input_prefix/validation_error_message مفيدة فقط عندما
+    // reply_type = COLLECT_INPUT؛ إن كانت الخدمة INFO نتجاهلها ونحفظها فارغة
+    // حتى لا تبقى بيانات تحقّق قديمة غير مستخدمة معلّقة على خدمة رد ثابت
+    input_format: body.reply_type === 'COLLECT_INPUT' ? body.input_format : null,
+    input_prefix: body.reply_type === 'COLLECT_INPUT' ? body.input_prefix : null,
+    validation_error_message: body.reply_type === 'COLLECT_INPUT' ? body.validation_error_message : null,
+    external_api_url: body.reply_type === 'COLLECT_INPUT' ? body.external_api_url : null,
+    external_service_code: body.reply_type === 'COLLECT_INPUT' ? body.external_service_code : null,
+  };
+}
 
-  const existing = servicesRepository.findByServiceId(service_id);
+const createService = asyncHandler(async (req, res) => {
+  const fields = extractServiceFields(req.body);
+
+  const existing = servicesRepository.findByServiceId(fields.service_id);
   if (existing) {
     throw new AppError(ErrorCodes.SERVICE_ID_EXISTS, 'معرف الخدمة (service_id) مستخدم بالفعل', 409);
   }
 
-  if (category_id && !categoriesRepository.findById(category_id)) {
+  if (fields.category_id && !categoriesRepository.findById(fields.category_id)) {
     throw new AppError(ErrorCodes.CATEGORY_NOT_FOUND, 'القسم المحدَّد غير موجود', 400);
   }
 
-  const service = servicesRepository.create({ service_id, name, description, category_id, status });
+  const service = servicesRepository.create(fields);
   res.status(201).json({ success: true, data: service });
 });
 
@@ -37,13 +56,13 @@ const updateService = asyncHandler(async (req, res) => {
     throw new AppError(ErrorCodes.SERVICE_NOT_FOUND, 'الخدمة غير موجودة', 404);
   }
 
-  const { name, description, category_id, status } = req.body;
+  const fields = extractServiceFields(req.body);
 
-  if (category_id && !categoriesRepository.findById(category_id)) {
+  if (fields.category_id && !categoriesRepository.findById(fields.category_id)) {
     throw new AppError(ErrorCodes.CATEGORY_NOT_FOUND, 'القسم المحدَّد غير موجود', 400);
   }
 
-  const updated = servicesRepository.update(id, { name, description, category_id, status });
+  const updated = servicesRepository.update(id, fields);
   res.json({ success: true, data: updated });
 });
 

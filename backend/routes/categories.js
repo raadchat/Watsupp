@@ -20,6 +20,7 @@ router.post(
   body('name').trim().notEmpty().withMessage('اسم القسم مطلوب'),
   body('display_order').optional().isInt().withMessage('ترتيب الظهور يجب أن يكون رقماً صحيحاً'),
   body('status').optional().isIn(['active', 'inactive']).withMessage('الحالة يجب أن تكون active أو inactive'),
+  body('parent_category_id').optional({ nullable: true }).isInt().withMessage('القسم الأب غير صالح'),
   handleValidation,
   categoriesController.createCategory
 );
@@ -31,6 +32,7 @@ router.put(
   body('name').trim().notEmpty().withMessage('اسم القسم مطلوب'),
   body('display_order').optional().isInt().withMessage('ترتيب الظهور يجب أن يكون رقماً صحيحاً'),
   body('status').optional().isIn(['active', 'inactive']).withMessage('الحالة يجب أن تكون active أو inactive'),
+  body('parent_category_id').optional({ nullable: true }).isInt().withMessage('القسم الأب غير صالح'),
   handleValidation,
   categoriesController.updateCategory
 );
