@@ -1127,6 +1127,7 @@ async function loadBotSettings() {
   try {
     const result = await api.getBotSettings();
     document.getElementById('welcome-message-text').value = result.data.welcome_message || '';
+    document.getElementById('public-base-url').value = result.data.public_base_url || '';
     welcomeImageMarkedForRemoval = false;
     document.getElementById('welcome-image-input').value = '';
 
@@ -1152,6 +1153,7 @@ async function handleBotSettingsFormSubmit(e) {
 
   const formData = new FormData();
   formData.append('welcome_message', message);
+  formData.append('public_base_url', document.getElementById('public-base-url').value.trim());
 
   const file = document.getElementById('welcome-image-input').files[0];
   if (file) {

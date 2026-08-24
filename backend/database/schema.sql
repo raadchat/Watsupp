@@ -164,6 +164,8 @@ CREATE TABLE IF NOT EXISTS bot_settings (
   welcome_image_filename  TEXT,
   updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- ملاحظة: bot_settings.public_base_url (الرابط العام للخادم، لازم لبناء رابط
+-- صورة الترحيب الذي يجلبه واتساب) يُضاف عبر ترقية تلقائية في db.js.
 
 -- ---------------------------------------------------------
 -- Customer Service Settings: صف واحد فقط — يتحكم في القسم الثابت "خدمة

@@ -66,11 +66,14 @@ function buildServiceListSections(services) {
   // ملاحظة: WhatsApp Cloud API يسمح بحد أقصى 10 صفوف في رسالة قائمة واحدة.
   // إذا تجاوز عدد الخدمات النشطة (ضمن القسم) هذا الحد، تُعرض أول 10 فقط
   // (قيد حقيقي من واجهة واتساب، وليس افتراضاً اعتباطياً).
+  //
+  // description تُترَك فارغة عمداً: لا نعرض معاينة نص الرد تحت اسم الخدمة في
+  // القائمة — الرد لا يظهر للعميل إلا بعد اختيار اسم الخدمة، وليس قبله.
   const limited = services.slice(0, MAX_LIST_ROWS);
   const rows = limited.map((s) => ({
     id: s.service_id,
     title: truncate(s.name, MAX_TITLE_LEN),
-    description: truncate(s.description || '', MAX_DESC_LEN),
+    description: '',
   }));
   return [{ title: 'الخدمات المتاحة', rows }];
 }
@@ -144,38 +147,40 @@ async function sendServicesList(customer, categoryDbId) {
   customersRepository.updateState(customer.id, 'SERVICE_LIST');
 }
 
-const DEFAULT_WELCOME_TEXT = 'مرحباً بك 👋\nاضغط الزر أدناه لعرض القائمة، أو اكتب "الخدمات".';
+const DEFAULT_WELCOME_TEXT = 'مرحباً بك 👋';
 
 function getPublicBaseUrl() {
   // يُستخدم لبناء رابط عام لصورة الترحيب يستطيع خادم Meta الوصول إليه.
-  // اضبط PUBLIC_BASE_URL في .env بمجرد نشر الخادم على نطاق حقيقي (أو رابط
-  // ngrok أثناء التجربة) — القيمة الافتراضية أدناه تعمل محلياً فقط ولن
-  // تصل إليها Meta، فلن تُرسَل الصورة فعلياً حتى تُضبط.
-  return process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  // يُقرأ أولاً من bot_settings (قابل للضبط من لوحة التحكم مباشرة)، ثم
+  // PUBLIC_BASE_URL في .env كتراجع، ثم رابط محلي لن تصل إليه Meta فعلياً
+  // (يعني عدم ضبط أي منهما = لن تُرسَل صورة الترحيب فعلياً حتى يُضبط أحدهما).
+  const botSettings = botSettingsRepository.get();
+  return botSettings?.public_base_url || process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 }
 
 /**
  * أي رسالة غير مفهومة (أو أول تواصل من عميل جديد) تصل هنا: رسالة ترحيب
- * قابلة للتعديل الكامل من لوحة التحكم (نص + صورة اختيارية)، مع زر تفاعلي
- * "عرض القائمة" يفتح الأقسام/الخدمات مباشرة بضغطة واحدة — بدل انتظار أن
- * يكتب العميل كلمة "الخدمات" بنفسه بالضبط، وهو ما كان يفشل عملياً.
+ * قابلة للتعديل الكامل من لوحة التحكم (نص + صورة اختيارية)، متبوعة فوراً
+ * بقائمة الأقسام/الخدمات نفسها — بلا أي زر وسيط ينتظر ضغطة العميل. واتساب
+ * لا يسمح بصورة داخل رسالة قائمة تفاعلية (header القوائم نصي فقط، خلافاً
+ * لرسائل الأزرار)، لذلك تُرسَل الصورة (إن وُجدت) كرسالة صورة عادية أولاً
+ * ثم تلحقها رسالة القائمة مباشرة في نفس اللحظة — لا ضغطة زر مطلوبة إطلاقاً.
  */
 async function sendWelcomeMessage(customer) {
   const botSettings = botSettingsRepository.get();
   const messageText = botSettings?.welcome_message || DEFAULT_WELCOME_TEXT;
-  const imageUrl = botSettings?.welcome_image_filename
-    ? `${getPublicBaseUrl()}/uploads/${botSettings.welcome_image_filename}`
-    : null;
 
-  const result = await whatsappService.sendButtonMessage(
-    customer.phone_number,
-    messageText,
-    [{ id: 'show_menu', title: 'عرض القائمة' }],
-    imageUrl
-  );
-
+  let result;
+  if (botSettings?.welcome_image_filename) {
+    const imageUrl = `${getPublicBaseUrl()}/uploads/${botSettings.welcome_image_filename}`;
+    result = await whatsappService.sendImageMessage(customer.phone_number, imageUrl, messageText);
+  } else {
+    result = await whatsappService.sendTextMessage(customer.phone_number, messageText);
+  }
   await sendOutbound(customer, messageText, result);
-  customersRepository.updateState(customer.id, 'MAIN_MENU');
+
+  // مباشرة، بلا انتظار أي ضغطة: أرسل قائمة الأقسام (أو الخدمات إن لم توجد أقسام بعد)
+  await sendCategoriesList(customer);
 }
 
 async function handleCategorySelection(customer, selectedCategoryId) {
@@ -384,18 +389,21 @@ async function handleServiceSelection(customer, selectedServiceId) {
   customersRepository.updateState(customer.id, 'SERVICE_SELECTED', service.id);
 
   if (service.reply_type === 'INFO') {
-    // استعلام عن معلومة معروفة: description هو نص الرد نفسه، لا حاجة لأي إدخال إضافي
-    const text = `*${service.name}*\n\n${service.description || ''}`.trim();
+    // استعلام عن معلومة معروفة: description هو نص الرد نفسه فقط — بلا اسم
+    // الخدمة مكرَّراً معه (العميل رآه للتو في القائمة عند الاختيار)
+    const text = (service.description || '').trim() || 'لا تتوفر تفاصيل إضافية لهذه الخدمة حالياً.';
     const result = await whatsappService.sendTextMessage(customer.phone_number, text);
     await sendOutbound(customer, text, result);
     await completeConversation(customer);
     return;
   }
 
-  // COLLECT_INPUT: نعرض تفاصيل الخدمة ثم نطلب من العميل بياناته بالصيغة المطلوبة
-  const detailsText = `*${service.name}*\n\n${service.description || ''}`.trim();
-  const detailsResult = await whatsappService.sendTextMessage(customer.phone_number, detailsText);
-  await sendOutbound(customer, detailsText, detailsResult);
+  // COLLECT_INPUT: نعرض تفاصيل الخدمة (النص فقط، بلا اسمها) إن وُجدت، ثم نطلب من العميل بياناته بالصيغة المطلوبة
+  const detailsText = (service.description || '').trim();
+  if (detailsText) {
+    const detailsResult = await whatsappService.sendTextMessage(customer.phone_number, detailsText);
+    await sendOutbound(customer, detailsText, detailsResult);
+  }
 
   const askText = buildInputPrompt(service);
   const askResult = await whatsappService.sendTextMessage(customer.phone_number, askText);

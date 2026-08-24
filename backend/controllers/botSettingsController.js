@@ -43,12 +43,13 @@ const getBotSettings = asyncHandler(async (req, res) => {
       welcome_message: settings?.welcome_message || null,
       welcome_image_filename: settings?.welcome_image_filename || null,
       welcome_image_url: settings?.welcome_image_filename ? `/uploads/${settings.welcome_image_filename}` : null,
+      public_base_url: settings?.public_base_url || null,
     },
   });
 });
 
 const saveBotSettings = asyncHandler(async (req, res) => {
-  const { welcome_message } = req.body;
+  const { welcome_message, public_base_url } = req.body;
 
   if (!welcome_message || !welcome_message.trim()) {
     throw new AppError(ErrorCodes.VALIDATION_ERROR, 'نص رسالة الترحيب مطلوب', 400);
@@ -73,7 +74,11 @@ const saveBotSettings = asyncHandler(async (req, res) => {
   // وإلا (لا ملف جديد ولا طلب حذف): welcome_image_filename تبقى undefined،
   // فيُبقي botSettingsRepository.save() على الصورة الحالية كما هي
 
-  const saved = botSettingsRepository.save({ welcome_message: welcome_message.trim(), welcome_image_filename });
+  const saved = botSettingsRepository.save({
+    welcome_message: welcome_message.trim(),
+    welcome_image_filename,
+    public_base_url: public_base_url !== undefined ? public_base_url.trim() || null : undefined,
+  });
 
   res.json({
     success: true,
@@ -81,6 +86,7 @@ const saveBotSettings = asyncHandler(async (req, res) => {
       welcome_message: saved.welcome_message,
       welcome_image_filename: saved.welcome_image_filename,
       welcome_image_url: saved.welcome_image_filename ? `/uploads/${saved.welcome_image_filename}` : null,
+      public_base_url: saved.public_base_url || null,
     },
   });
 });

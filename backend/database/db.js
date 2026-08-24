@@ -45,6 +45,7 @@ ensureCustomerColumnsMigration(db);
 ensureCustomerStateExpansionMigration(db);
 ensureMessagesSentByMigration(db);
 ensureAgentRatingColumnsMigration(db);
+ensurePublicBaseUrlMigration(db);
 
 console.log(`[database] متصل بقاعدة البيانات: ${dbPath}`);
 
@@ -242,4 +243,13 @@ function ensureAgentRatingColumnsMigration(database) {
     database.exec('ALTER TABLE admins ADD COLUMN name TEXT');
     database.exec('UPDATE admins SET name = username WHERE name IS NULL');
   }
+}
+
+/** ترقية بسيطة: bot_settings.public_base_url (الرابط العام للخادم لبناء روابط الصور). */
+function ensurePublicBaseUrlMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(bot_settings)').all();
+  if (columns.some((c) => c.name === 'public_base_url')) return;
+
+  console.log('[database] ترقية: إضافة bot_settings.public_base_url...');
+  database.exec('ALTER TABLE bot_settings ADD COLUMN public_base_url TEXT');
 }

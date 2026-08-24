@@ -303,7 +303,13 @@
                     <button type="button" id="remove-welcome-image-btn" class="btn btn-danger">إزالة الصورة</button>
                   </div>
                 </div>
-                <p class="hint">تُرسَل الصورة كرسالة صورة على واتساب مع نص الترحيب كتعليق (caption). يتطلب أن يكون الخادم متاحاً عبر رابط عام (راجع PUBLIC_BASE_URL في .env) حتى تصل الصورة فعلياً لواتساب.</p>
+                <p class="hint">تُرسَل الصورة كرسالة صورة على واتساب مع نص الترحيب كتعليق (caption).</p>
+              </div>
+
+              <div class="field">
+                <label for="public-base-url">الرابط العام للخادم (Public Base URL)</label>
+                <input type="text" id="public-base-url" class="mono" placeholder="https://your-domain.com أو رابط ngrok" />
+                <p class="hint">لازم فقط إذا أردت إرسال صورة ترحيب — واتساب يجلب الصورة عبر هذا الرابط + المسار الداخلي، فيجب أن يكون الخادم متاحاً عليه فعلياً من الإنترنت.</p>
               </div>
 
               <button type="submit" id="bot-settings-save-btn" class="btn btn-primary">
