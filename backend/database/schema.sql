@@ -13,10 +13,13 @@ CREATE TABLE IF NOT EXISTS admins (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   username      TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,           -- bcrypt hash فقط، لا يُخزَّن أي نص صريح أبداً
-  role          TEXT NOT NULL DEFAULT 'admin',
+  role          TEXT NOT NULL DEFAULT 'admin',  -- 'admin' أو 'agent' (وكيل خدمة عملاء)
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- ملاحظة: admins.name (الاسم المعروض، مختلف عن username المُستخدَم للدخول)
+-- و admins.rating_total و admins.rating_count (تقييم 5 نجوم التراكمي لوكلاء
+-- خدمة العملاء) تُضاف عبر ترقية تلقائية في db.js.
 
 -- ---------------------------------------------------------
 -- Categories: تصنيف "المستوى الأول" في قائمة واتساب (مثال: الخدمات البنكية،
@@ -99,6 +102,8 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_customer ON messages(customer_id);
+-- ملاحظة: messages.sent_by (من أرسل رسالة صادرة: NULL = البوت تلقائياً، أو
+-- اسم مستخدم المدير/الوكيل الذي ردّ يدوياً) يُضاف عبر ترقية تلقائية في db.js.
 
 -- ---------------------------------------------------------
 -- Bulk jobs + items: جدول إضافي لإدارة طابور الرسائل الجماعية
@@ -158,4 +163,17 @@ CREATE TABLE IF NOT EXISTS bot_settings (
   welcome_message         TEXT,
   welcome_image_filename  TEXT,
   updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ---------------------------------------------------------
+-- Customer Service Settings: صف واحد فقط — يتحكم في القسم الثابت "خدمة
+-- العملاء" الذي يظهر دائماً كآخر خيار في قائمة الأقسام الرئيسية (وليس
+-- صفاً حقيقياً في جدول categories، حتى يبقى ترتيبه مضموناً كآخر عنصر
+-- بصرف النظر عن عدد الأقسام الحقيقية التي يضيفها المدير أو يحذفها).
+-- ---------------------------------------------------------
+CREATE TABLE IF NOT EXISTS customer_service_settings (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled    INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  label      TEXT NOT NULL DEFAULT 'خدمة العملاء',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

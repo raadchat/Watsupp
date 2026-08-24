@@ -6,6 +6,10 @@ const STATE_LABELS = {
   SERVICE_LIST: 'يستعرض الخدمات',
   SERVICE_SELECTED: 'اختار خدمة',
   WAITING_FOR_DATA: 'بانتظار بياناته',
+  AWAITING_NOTIFICATION_OPT_IN: 'يُسأل عن الإشعارات',
+  CUSTOMER_SERVICE_WAITING: 'بانتظار وكيل',
+  CUSTOMER_SERVICE_ACTIVE: 'مع وكيل الآن',
+  CUSTOMER_SERVICE_RATING: 'يُقيّم الخدمة',
   COMPLETED: 'اكتمل طلبه',
 };
 
@@ -15,6 +19,7 @@ const SECTION_TITLES = {
   customers: 'العملاء',
   bulk: 'الرسائل الجماعية',
   'bot-settings': 'إعدادات البوت',
+  users: 'المستخدمون',
   settings: 'الاتصال بواتساب',
 };
 
@@ -66,6 +71,8 @@ function setBtnLoading(btn, isLoading) {
 
 let categoriesCache = [];
 let servicesCache = [];
+let customersCache = [];
+let agentsCache = [];
 let itemToDelete = null; // { type: 'service' | 'category', data }
 let customersState = { search: '', page: 1, pageSize: 20, total: 0 };
 let searchDebounceTimer = null;
@@ -79,8 +86,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const admin = getStoredAdmin();
+  if (admin && admin.role === 'agent') {
+    location.href = 'agent.html'; // هذه اللوحة الكاملة للمدير فقط — الوكيل له صفحته المبسّطة
+    return;
+  }
   if (admin && admin.username) {
-    document.getElementById('admin-username').textContent = admin.username;
+    document.getElementById('admin-username').textContent = admin.name || admin.username;
   }
 
   setupNavigation();
@@ -89,10 +100,13 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCategoriesSection();
   setupServicesSection();
   setupCustomersSection();
+  setupConversationModal();
   setupBulkSection();
   setupDeleteModal();
   setupSettingsSection();
   setupBotSettingsSection();
+  setupUsersSection();
+  setupCustomerServiceToggle();
 
   loadCategories(); // القسم الافتراضي عند فتح اللوحة (المستوى الأول في قائمة واتساب)
 });
@@ -125,7 +139,11 @@ function showSection(name) {
     stopJobsPolling();
   }
   if (name === 'settings') loadSettings();
-  if (name === 'bot-settings') loadBotSettings();
+  if (name === 'bot-settings') {
+    loadBotSettings();
+    loadCustomerServiceSettings();
+  }
+  if (name === 'users') loadAgents();
 }
 
 function setupMobileSidebar() {
@@ -607,6 +625,7 @@ async function loadCustomers() {
       pageSize: customersState.pageSize,
     });
     customersState.total = result.meta.total;
+    customersCache = result.data;
 
     if (result.data.length === 0) {
       tbody.innerHTML = '';
@@ -633,6 +652,11 @@ function renderCustomerRow(c) {
       <td data-label="الحالة"><span class="status-badge ${statusClass}">${statusLabel}</span></td>
       <td data-label="تاريخ الإنشاء" class="cell-muted mono">${formatDate(c.created_at)}</td>
       <td data-label="آخر تحديث" class="cell-muted mono">${formatDate(c.updated_at)}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="icon-btn view-conversation-btn" data-id="${c.id}" title="عرض المحادثة">💬</button>
+        </div>
+      </td>
     </tr>
   `;
 }
@@ -643,6 +667,96 @@ function updatePaginationUI() {
   document.getElementById('pagination-info').textContent = `صفحة ${page} من ${totalPages} — ${total} عميل`;
   document.getElementById('prev-page-btn').disabled = page <= 1;
   document.getElementById('next-page-btn').disabled = page >= totalPages;
+}
+
+// =====================================================================
+// محادثة العميل (عرض كامل + رد يدوي مباشر) — القسم 6
+// =====================================================================
+
+let openConversationCustomerId = null;
+
+function setupConversationModal() {
+  document.getElementById('customers-tbody').addEventListener('click', (e) => {
+    const btn = e.target.closest('.view-conversation-btn');
+    if (btn) openConversationModal(btn.dataset.id);
+  });
+
+  document.getElementById('conversation-modal-close').addEventListener('click', closeConversationModal);
+  document.getElementById('conversation-reply-btn').addEventListener('click', handleConversationReply);
+  document.getElementById('conversation-reply-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleConversationReply();
+  });
+}
+
+async function openConversationModal(customerId) {
+  openConversationCustomerId = customerId;
+  const customer = customersCache.find((c) => String(c.id) === String(customerId));
+
+  document.getElementById('conversation-modal-title').textContent = customer
+    ? `المحادثة — ${customer.phone_number}`
+    : 'المحادثة';
+  document.getElementById('conversation-thread').innerHTML = '<p class="cell-muted">جارٍ التحميل…</p>';
+  document.getElementById('conversation-modal-overlay').classList.remove('hidden');
+
+  await refreshConversationThread();
+}
+
+async function refreshConversationThread() {
+  if (!openConversationCustomerId) return;
+  try {
+    const result = await api.getCustomerMessages(openConversationCustomerId);
+    renderConversationThread(result.data.messages);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function renderConversationThread(messages) {
+  const threadEl = document.getElementById('conversation-thread');
+  if (messages.length === 0) {
+    threadEl.innerHTML = '<p class="cell-muted">لا توجد رسائل بعد.</p>';
+    return;
+  }
+
+  threadEl.innerHTML = messages
+    .map((m) => {
+      const isInbound = m.direction === 'inbound';
+      const align = isInbound ? 'flex-start' : 'flex-end';
+      const bg = isInbound ? 'var(--bg)' : 'var(--accent-soft)';
+      const label = isInbound ? 'العميل' : m.sent_by ? `رد يدوي — ${m.sent_by}` : 'البوت';
+      return `
+        <div style="align-self:${align}; max-width:80%; background:${bg}; padding:8px 12px; border-radius:12px;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:3px;">${escapeHtml(label)} · ${formatDate(m.created_at)}</div>
+          <div style="font-size:13.5px; white-space:pre-wrap;">${escapeHtml(m.message || '')}</div>
+        </div>
+      `;
+    })
+    .join('');
+
+  threadEl.scrollTop = threadEl.scrollHeight;
+}
+
+function closeConversationModal() {
+  document.getElementById('conversation-modal-overlay').classList.add('hidden');
+  openConversationCustomerId = null;
+}
+
+async function handleConversationReply() {
+  const input = document.getElementById('conversation-reply-input');
+  const text = input.value.trim();
+  if (!text || !openConversationCustomerId) return;
+
+  const btn = document.getElementById('conversation-reply-btn');
+  setBtnLoading(btn, true);
+  try {
+    await api.sendCustomerMessage(openConversationCustomerId, text);
+    input.value = '';
+    await refreshConversationThread();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    setBtnLoading(btn, false);
+  }
 }
 
 // =====================================================================
@@ -1053,6 +1167,125 @@ async function handleBotSettingsFormSubmit(e) {
     showToast('تم حفظ رسالة الترحيب بنجاح');
     welcomeImageMarkedForRemoval = false;
     loadBotSettings(); // إعادة تحميل لعرض رابط الصورة الفعلي المحفوظ (بدل معاينة base64 المؤقتة)
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    setBtnLoading(saveBtn, false);
+  }
+}
+
+// =====================================================================
+// قسم المستخدمون (وكلاء خدمة العملاء)
+// =====================================================================
+
+function setupUsersSection() {
+  document.getElementById('add-agent-btn').addEventListener('click', openAgentModal);
+  document.getElementById('add-agent-btn-empty').addEventListener('click', openAgentModal);
+  document.getElementById('agent-modal-close').addEventListener('click', closeAgentModal);
+  document.getElementById('agent-cancel-btn').addEventListener('click', closeAgentModal);
+  document.getElementById('agent-form').addEventListener('submit', handleAgentFormSubmit);
+}
+
+async function loadAgents() {
+  const tbody = document.getElementById('agents-tbody');
+  const emptyEl = document.getElementById('agents-empty');
+  tbody.innerHTML = renderSkeletonRows(4, 3);
+  emptyEl.classList.add('hidden');
+
+  try {
+    const result = await api.getAgents();
+    agentsCache = result.data;
+
+    if (agentsCache.length === 0) {
+      tbody.innerHTML = '';
+      emptyEl.classList.remove('hidden');
+      return;
+    }
+    tbody.innerHTML = agentsCache.map(renderAgentRow).join('');
+  } catch (err) {
+    tbody.innerHTML = '';
+    showToast(err.message, 'error');
+  }
+}
+
+function renderAgentRow(a) {
+  const ratingDisplay =
+    a.rating_average === null
+      ? '<span class="cell-muted">لا يوجد تقييم بعد</span>'
+      : `${'⭐'.repeat(Math.round(a.rating_average))} <span class="cell-muted mono">(${a.rating_average}/5 — ${a.rating_count} تقييم)</span>`;
+  return `
+    <tr>
+      <td data-label="الاسم" class="cell-title">${escapeHtml(a.name || a.username)}</td>
+      <td data-label="اسم المستخدم"><span class="mono">${escapeHtml(a.username)}</span></td>
+      <td data-label="التقييم">${ratingDisplay}</td>
+      <td data-label="تاريخ الإضافة" class="cell-muted mono">${formatDate(a.created_at)}</td>
+    </tr>
+  `;
+}
+
+function openAgentModal() {
+  document.getElementById('agent-form').reset();
+  document.getElementById('agent-modal-overlay').classList.remove('hidden');
+}
+
+function closeAgentModal() {
+  document.getElementById('agent-modal-overlay').classList.add('hidden');
+}
+
+async function handleAgentFormSubmit(e) {
+  e.preventDefault();
+  const saveBtn = document.getElementById('agent-save-btn');
+
+  const payload = {
+    name: document.getElementById('agent-name').value.trim(),
+    username: document.getElementById('agent-username').value.trim(),
+    password: document.getElementById('agent-password').value,
+  };
+
+  setBtnLoading(saveBtn, true);
+  try {
+    await api.createAgent(payload);
+    showToast('تمت إضافة المستخدم بنجاح');
+    closeAgentModal();
+    loadAgents();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    setBtnLoading(saveBtn, false);
+  }
+}
+
+// =====================================================================
+// خيار "خدمة العملاء" الثابت (ضمن قسم إعدادات البوت)
+// =====================================================================
+
+function setupCustomerServiceToggle() {
+  document.getElementById('customer-service-form').addEventListener('submit', handleCustomerServiceFormSubmit);
+}
+
+async function loadCustomerServiceSettings() {
+  try {
+    const result = await api.getCustomerServiceSettings();
+    document.getElementById('cs-enabled').checked = Boolean(result.data.enabled);
+    document.getElementById('cs-label').value = result.data.label || 'خدمة العملاء';
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function handleCustomerServiceFormSubmit(e) {
+  e.preventDefault();
+  const saveBtn = document.getElementById('cs-save-btn');
+
+  const payload = {
+    enabled: document.getElementById('cs-enabled').checked,
+    label: document.getElementById('cs-label').value.trim() || 'خدمة العملاء',
+  };
+
+  setBtnLoading(saveBtn, true);
+  try {
+    await api.saveCustomerServiceSettings(payload);
+    showToast('تم الحفظ بنجاح');
   } catch (err) {
     showToast(err.message, 'error');
   } finally {

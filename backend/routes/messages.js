@@ -4,9 +4,10 @@ const express = require('express');
 const router = express.Router();
 
 const messagesController = require('../controllers/messagesController');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdminRole } = require('../middleware/auth');
 
 router.use(authenticateToken);
+router.use(requireAdminRole); // كل مسارات هذا الملف إدارية بحتة — لا وصول لوكلاء خدمة العملاء
 
 // POST /api/messages/bulk  (multipart/form-data: file اختياري + message + phone_numbers اختياري)
 router.post('/bulk', messagesController.upload.single('file'), messagesController.sendBulkMessages);

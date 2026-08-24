@@ -452,6 +452,15 @@ button {
   border-radius: 999px;
 }
 
+/* صفحة الوكيل: عنصر محادثة مُختار حالياً في قائمة الطابور/محادثاتي */
+.conversation-list-item:hover {
+  background: rgba(31, 138, 99, 0.04);
+}
+
+.conversation-list-item.active {
+  background: var(--accent-soft);
+}
+
 .sidebar-footer {
   border-top: 1px solid rgba(216, 230, 223, 0.1);
   padding-top: 16px;

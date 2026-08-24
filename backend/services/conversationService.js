@@ -22,10 +22,17 @@ const servicesRepository = require('../database/repositories/servicesRepository'
 const customersRepository = require('../database/repositories/customersRepository');
 const messagesRepository = require('../database/repositories/messagesRepository');
 const botSettingsRepository = require('../database/repositories/botSettingsRepository');
+const customerServiceSettingsRepository = require('../database/repositories/customerServiceSettingsRepository');
+const adminsRepository = require('../database/repositories/adminsRepository');
 const whatsappService = require('./whatsappService');
 const axios = require('axios');
 
-const SERVICES_TRIGGER_WORDS = ['الخدمات', 'خدمات', 'services', 'menu', 'قائمة'];
+const SERVICES_TRIGGER_WORDS = ['الخدمات', 'خدمات', 'services', 'menu', 'قائمة', 'show_menu'];
+
+// معرّف محجوز لخيار "خدمة العملاء" الثابت — ليس صفاً حقيقياً في categories،
+// فلا يمكن أن يتصادم مع category_id يُنشئه المدير (categoriesController يمنع
+// استخدام هذه القيمة تحديداً عند إنشاء قسم عادي).
+const CUSTOMER_SERVICE_RESERVED_ID = '__customer_service__';
 
 // حدود رسالة القائمة التفاعلية في WhatsApp Cloud API (تنطبق على كل مستوى على حدة)
 const MAX_LIST_ROWS = 10;
@@ -37,15 +44,20 @@ function truncate(str, len) {
   return str.length > len ? `${str.slice(0, len - 1)}…` : str;
 }
 
-/** يبني sections لرسالة قائمة الأقسام (المستوى الأول) مباشرة من قاعدة البيانات. */
-function buildCategoryListSections(categories) {
-  // نفس قيد الـ 10 صفوف أدناه، يُطبَّق هنا أيضاً لأنها رسالة قائمة مستقلة
-  const limited = categories.slice(0, MAX_LIST_ROWS);
+/** يبني sections لرسالة قائمة الأقسام (المستوى الأول) مباشرة من قاعدة البيانات.
+ * customerServiceLabel (إن مُرِّر) يُضاف كصف أخير دائماً — مع حجز مكانه مسبقاً
+ * حتى لا يُقطَع بحد الـ 10 صفوف إن وُجدت 10 أقسام حقيقية بالضبط. */
+function buildCategoryListSections(categories, customerServiceLabel = null) {
+  const reserveSlot = customerServiceLabel ? 1 : 0;
+  const limited = categories.slice(0, MAX_LIST_ROWS - reserveSlot);
   const rows = limited.map((c) => ({
     id: c.category_id,
     title: truncate(c.name, MAX_TITLE_LEN),
     description: truncate(c.description || '', MAX_DESC_LEN),
   }));
+  if (customerServiceLabel) {
+    rows.push({ id: CUSTOMER_SERVICE_RESERVED_ID, title: truncate(customerServiceLabel, MAX_TITLE_LEN), description: '' });
+  }
   return [{ title: 'الأقسام المتاحة', rows }];
 }
 
@@ -84,16 +96,16 @@ async function sendOutbound(customer, text, whatsappResult) {
 async function sendCategoriesList(customer, parentDbId = null) {
   const activeCategories = categoriesRepository.findActiveChildrenOf(parentDbId); // <-- القراءة المباشرة من قاعدة البيانات
 
-  if (activeCategories.length === 0) {
-    if (parentDbId === null) {
-      await sendServicesList(customer, null); // لا توجد أقسام في النظام كله بعد
-    } else {
-      await sendServicesList(customer, parentDbId); // قسم "ورقة" — أبناؤه خدمات لا أقسام
-    }
+  // "خدمة العملاء" تظهر فقط في القائمة الرئيسية (المستوى الأول)، كآخر خيار دائماً
+  const csSettings = parentDbId === null ? customerServiceSettingsRepository.get() : null;
+  const csEnabled = Boolean(csSettings && csSettings.enabled === 1);
+
+  if (activeCategories.length === 0 && !csEnabled) {
+    await sendServicesList(customer, parentDbId); // لا أقسام هنا (ولا خدمة عملاء مفعّلة) — تراجع لعرض الخدمات مباشرة
     return;
   }
 
-  const sections = buildCategoryListSections(activeCategories);
+  const sections = buildCategoryListSections(activeCategories, csEnabled ? csSettings.label : null);
   const result = await whatsappService.sendInteractiveListMessage(customer.phone_number, {
     bodyText: 'اختر القسم المناسب:',
     buttonText: 'عرض الأقسام',
@@ -132,7 +144,7 @@ async function sendServicesList(customer, categoryDbId) {
   customersRepository.updateState(customer.id, 'SERVICE_LIST');
 }
 
-const DEFAULT_WELCOME_TEXT = 'مرحباً بك 👋\nاكتب "الخدمات" لعرض قائمة الخدمات المتاحة حالياً.';
+const DEFAULT_WELCOME_TEXT = 'مرحباً بك 👋\nاضغط الزر أدناه لعرض القائمة، أو اكتب "الخدمات".';
 
 function getPublicBaseUrl() {
   // يُستخدم لبناء رابط عام لصورة الترحيب يستطيع خادم Meta الوصول إليه.
@@ -144,20 +156,23 @@ function getPublicBaseUrl() {
 
 /**
  * أي رسالة غير مفهومة (أو أول تواصل من عميل جديد) تصل هنا: رسالة ترحيب
- * قابلة للتعديل الكامل من لوحة التحكم (نص + صورة اختيارية)، بدل نص ثابت
- * في الكود — كما هو مطلوب صراحة.
+ * قابلة للتعديل الكامل من لوحة التحكم (نص + صورة اختيارية)، مع زر تفاعلي
+ * "عرض القائمة" يفتح الأقسام/الخدمات مباشرة بضغطة واحدة — بدل انتظار أن
+ * يكتب العميل كلمة "الخدمات" بنفسه بالضبط، وهو ما كان يفشل عملياً.
  */
 async function sendWelcomeMessage(customer) {
   const botSettings = botSettingsRepository.get();
   const messageText = botSettings?.welcome_message || DEFAULT_WELCOME_TEXT;
+  const imageUrl = botSettings?.welcome_image_filename
+    ? `${getPublicBaseUrl()}/uploads/${botSettings.welcome_image_filename}`
+    : null;
 
-  let result;
-  if (botSettings?.welcome_image_filename) {
-    const imageUrl = `${getPublicBaseUrl()}/uploads/${botSettings.welcome_image_filename}`;
-    result = await whatsappService.sendImageMessage(customer.phone_number, imageUrl, messageText);
-  } else {
-    result = await whatsappService.sendTextMessage(customer.phone_number, messageText);
-  }
+  const result = await whatsappService.sendButtonMessage(
+    customer.phone_number,
+    messageText,
+    [{ id: 'show_menu', title: 'عرض القائمة' }],
+    imageUrl
+  );
 
   await sendOutbound(customer, messageText, result);
   customersRepository.updateState(customer.id, 'MAIN_MENU');
@@ -182,6 +197,61 @@ async function handleCategorySelection(customer, selectedCategoryId) {
   } else {
     await sendServicesList(customer, category.id);
   }
+}
+
+/**
+ * العميل اختار "خدمة العملاء" من القائمة الرئيسية: يدخل طابور الانتظار
+ * (customers.conversation_state = CUSTOMER_SERVICE_WAITING) حتى يفتح أحد
+ * الوكلاء محادثته من صفحتهم فيُسنَد له تلقائياً — البوت لا يتدخل بعدها.
+ */
+async function handleCustomerServiceRequest(customer) {
+  const text = 'تم استلام طلبك، سيتواصل معك أحد ممثلي خدمة العملاء في أقرب وقت. 🙏';
+  const result = await whatsappService.sendTextMessage(customer.phone_number, text);
+  await sendOutbound(customer, text, result);
+  customersRepository.updateState(customer.id, 'CUSTOMER_SERVICE_WAITING');
+}
+
+/**
+ * يُستدعى من controller عند ضغط الوكيل "إنهاء المحادثة" — وليس من داخل
+ * آلة حالة البوت التلقائية، لأن خدمة العملاء تتم يدوياً بالكامل. يرسل طلب
+ * تقييم 5 نجوم كقائمة تفاعلية (لا أزرار: واتساب يسمح بـ 3 أزرار كحد أقصى،
+ * فالقائمة أنسب لـ 5 خيارات).
+ */
+async function endCustomerServiceConversation(customer) {
+  const bodyText = 'كيف تقيّم تجربتك مع خدمة العملاء؟';
+  const sections = [
+    {
+      title: 'التقييم',
+      rows: [5, 4, 3, 2, 1].map((n) => ({
+        id: `rating_${n}`,
+        title: '⭐'.repeat(n),
+        description: `${n} من 5`,
+      })),
+    },
+  ];
+  const result = await whatsappService.sendInteractiveListMessage(customer.phone_number, {
+    bodyText,
+    buttonText: 'اختر تقييمك',
+    sections,
+  });
+  await sendOutbound(customer, bodyText, result);
+  customersRepository.updateState(customer.id, 'CUSTOMER_SERVICE_RATING');
+}
+
+/** العميل اختار عدد نجوم — تُسجَّل للوكيل المُسنَد له، ثم تنتهي المحادثة بالمسار المعتاد (قد يُسأل عن الإشعارات). */
+async function handleRatingReply(customer, selectedRatingId) {
+  const match = /^rating_([1-5])$/.exec(selectedRatingId || '');
+  const stars = match ? Number(match[1]) : null;
+
+  if (stars && customer.assigned_agent_id) {
+    adminsRepository.addRating(customer.assigned_agent_id, stars);
+  }
+
+  const text = 'شكراً لتقييمك! 🙏';
+  const result = await whatsappService.sendTextMessage(customer.phone_number, text);
+  await sendOutbound(customer, text, result);
+
+  await completeConversation(customer);
 }
 
 // أنماط تحقق شكل مدخل العميل (القسم 4 من المواصفات) — \p{L}/\p{N} يونيكود
@@ -381,7 +451,26 @@ async function handleAwaitedData(customer, freeText) {
  * @param {{text: string|null, selectedId: string|null}} incoming
  */
 async function handleMessage(customer, { text, selectedId }) {
+  // خدمة العملاء: طالما العميل ينتظر وكيلاً أو يتحدث مع أحدهم فعلياً، البوت
+  // لا يتدخل إطلاقاً — الردود كلها يدوية من الوكيل عبر صفحته. الرسالة
+  // الواردة تُسجَّل بالفعل في webhookController قبل الوصول إلى هنا.
+  if (
+    customer.conversation_state === 'CUSTOMER_SERVICE_WAITING' ||
+    customer.conversation_state === 'CUSTOMER_SERVICE_ACTIVE'
+  ) {
+    return;
+  }
+
+  if (customer.conversation_state === 'CUSTOMER_SERVICE_RATING' && selectedId) {
+    await handleRatingReply(customer, selectedId);
+    return;
+  }
+
   if (selectedId) {
+    if (selectedId === CUSTOMER_SERVICE_RESERVED_ID && customer.conversation_state === 'CATEGORY_LIST') {
+      await handleCustomerServiceRequest(customer);
+      return;
+    }
     if (customer.conversation_state === 'CATEGORY_LIST') {
       await handleCategorySelection(customer, selectedId);
       return;
@@ -423,4 +512,10 @@ async function handleMessage(customer, { text, selectedId }) {
   await sendWelcomeMessage(customer);
 }
 
-module.exports = { handleMessage, buildCategoryListSections, buildServiceListSections };
+module.exports = {
+  handleMessage,
+  buildCategoryListSections,
+  buildServiceListSections,
+  endCustomerServiceConversation,
+  CUSTOMER_SERVICE_RESERVED_ID,
+};

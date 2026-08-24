@@ -34,6 +34,9 @@
         <button class="nav-item" data-section="bot-settings">
           <span>💬 إعدادات البوت</span>
         </button>
+        <button class="nav-item" data-section="users">
+          <span>🧑‍💼 المستخدمون</span>
+        </button>
         <button class="nav-item" data-section="settings">
           <span>🔌 الاتصال بواتساب</span>
         </button>
@@ -160,6 +163,7 @@
                     <th>الحالة</th>
                     <th>تاريخ الإنشاء</th>
                     <th>آخر تحديث</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody id="customers-tbody"></tbody>
@@ -308,6 +312,27 @@
               </button>
             </form>
           </div>
+
+          <div class="card card-pad" style="margin-top: 20px;">
+            <h3 style="margin:0 0 4px; font-size:15px;">خيار "خدمة العملاء" الثابت</h3>
+            <p class="subtitle" style="margin-bottom:16px;">يظهر دائماً كآخر خيار في قائمة الأقسام الرئيسية عند تفعيله — العملاء الذين يختارونه ينتظرون أحد الوكلاء بدل الرد الآلي.</p>
+            <form id="customer-service-form">
+              <div class="field">
+                <label for="cs-enabled">
+                  <input type="checkbox" id="cs-enabled" style="width:auto; margin-left:8px;" />
+                  تفعيل خيار خدمة العملاء
+                </label>
+              </div>
+              <div class="field">
+                <label for="cs-label">التسمية المعروضة للعميل</label>
+                <input type="text" id="cs-label" value="خدمة العملاء" />
+              </div>
+              <button type="submit" id="cs-save-btn" class="btn btn-primary">
+                <span class="spinner"></span>
+                <span class="btn-label">حفظ</span>
+              </button>
+            </form>
+          </div>
         </section>
 
         <!-- ============== قسم الاتصال بواتساب ============== -->
@@ -381,8 +406,42 @@
           </div>
         </section>
 
+        <!-- ============== قسم المستخدمون (وكلاء خدمة العملاء) ============== -->
+        <section id="section-users" class="section">
+          <div class="section-header">
+            <div>
+              <h2>المستخدمون</h2>
+              <p class="subtitle">وكلاء خدمة العملاء — يسجّلون الدخول من نفس صفحة الدخول، وتظهر لهم صفحة محادثات مبسّطة بدل اللوحة الكاملة.</p>
+            </div>
+            <button class="btn btn-primary" id="add-agent-btn">+ إضافة مستخدم</button>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap">
+              <table id="agents-table">
+                <thead>
+                  <tr>
+                    <th>الاسم</th>
+                    <th>اسم المستخدم</th>
+                    <th>التقييم</th>
+                    <th>تاريخ الإضافة</th>
+                  </tr>
+                </thead>
+                <tbody id="agents-tbody"></tbody>
+              </table>
+            </div>
+            <div id="agents-empty" class="state-block hidden">
+              <div class="state-icon">🧑‍💼</div>
+              <h3>لا يوجد مستخدمون بعد</h3>
+              <p>أضف أول وكيل خدمة عملاء ليتمكن من الرد على طلبات العملاء.</p>
+              <button class="btn btn-primary" id="add-agent-btn-empty">+ إضافة مستخدم</button>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
+
   </div>
 
   <!-- ============== Modal: إضافة/تعديل خدمة ============== -->
@@ -538,6 +597,59 @@
           <button type="button" class="btn btn-secondary" id="category-cancel-btn">إلغاء</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ============== Modal: إضافة مستخدم (وكيل خدمة عملاء) ============== -->
+  <div id="agent-modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>إضافة مستخدم</h3>
+        <button class="modal-close" id="agent-modal-close">×</button>
+      </div>
+      <form id="agent-form">
+        <div class="modal-body">
+          <div class="field">
+            <label for="agent-name">الاسم</label>
+            <input type="text" id="agent-name" required />
+          </div>
+          <div class="field">
+            <label for="agent-username">اسم المستخدم (للدخول)</label>
+            <input type="text" id="agent-username" required />
+          </div>
+          <div class="field">
+            <label for="agent-password">كلمة المرور</label>
+            <input type="password" id="agent-password" required minlength="6" />
+            <p class="hint">6 أحرف على الأقل.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="agent-save-btn">
+            <span class="spinner"></span>
+            <span class="btn-label">حفظ</span>
+          </button>
+          <button type="button" class="btn btn-secondary" id="agent-cancel-btn">إلغاء</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== Modal: محادثة العميل (عرض + رد يدوي) ============== -->
+  <div id="conversation-modal-overlay" class="modal-overlay hidden">
+    <div class="modal" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 id="conversation-modal-title">المحادثة</h3>
+        <button class="modal-close" id="conversation-modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="conversation-thread" style="max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+      <div class="modal-footer" style="flex-direction: column; align-items: stretch;">
+        <div class="toolbar">
+          <input type="text" id="conversation-reply-input" placeholder="اكتب رداً..." style="flex:1;" />
+          <button type="button" class="btn btn-primary" id="conversation-reply-btn">إرسال</button>
+        </div>
+      </div>
     </div>
   </div>
 

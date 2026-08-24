@@ -43,6 +43,8 @@ ensureParentCategoryMigration(db);
 ensureServiceReplyTypeMigration(db);
 ensureCustomerColumnsMigration(db);
 ensureCustomerStateExpansionMigration(db);
+ensureMessagesSentByMigration(db);
+ensureAgentRatingColumnsMigration(db);
 
 console.log(`[database] متصل بقاعدة البيانات: ${dbPath}`);
 
@@ -209,5 +211,35 @@ function ensureCustomerStateExpansionMigration(database) {
   } catch (err) {
     database.exec('ROLLBACK');
     throw err;
+  }
+}
+
+/** ترقية بسيطة: من أرسل كل رسالة صادرة (NULL=البوت تلقائياً، أو اسم مستخدم من ردّ يدوياً). */
+function ensureMessagesSentByMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(messages)').all();
+  if (columns.some((c) => c.name === 'sent_by')) return;
+
+  console.log('[database] ترقية: إضافة messages.sent_by...');
+  database.exec('ALTER TABLE messages ADD COLUMN sent_by TEXT');
+}
+
+/** ترقية بسيطة: مجموع/عدد تقييمات النجوم التراكمية لكل مدير (وكلاء خدمة العملاء تحديداً). */
+function ensureAgentRatingColumnsMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(admins)').all();
+  const names = columns.map((c) => c.name);
+
+  if (!names.includes('rating_total')) {
+    console.log('[database] ترقية: إضافة admins.rating_total...');
+    database.exec('ALTER TABLE admins ADD COLUMN rating_total INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!names.includes('rating_count')) {
+    console.log('[database] ترقية: إضافة admins.rating_count...');
+    database.exec('ALTER TABLE admins ADD COLUMN rating_count INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!names.includes('name')) {
+    console.log('[database] ترقية: إضافة admins.name...');
+    // القيمة الافتراضية للحسابات الموجودة مسبقاً: نفس username، حتى لا يبقى الاسم فارغاً بلا داعٍ
+    database.exec('ALTER TABLE admins ADD COLUMN name TEXT');
+    database.exec('UPDATE admins SET name = username WHERE name IS NULL');
   }
 }

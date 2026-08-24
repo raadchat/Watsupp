@@ -171,7 +171,18 @@ async function sendImageMessage(to, imageUrl, caption) {
  * @param {string} bodyText
  * @param {Array<{id: string, title: string}>} buttons - 3 كحد أقصى، العنوان 20 حرفاً كحد أقصى
  */
-async function sendButtonMessage(to, bodyText, buttons) {
+/**
+ * إرسال رسالة أزرار سريعة (Reply Buttons) — تدعم واتساب حداً أقصى 3 أزرار
+ * لكل رسالة (على عكس القوائم التي تصل حتى 10). تُستخدم لأسئلة نعم/لا
+ * البسيطة (مثل الموافقة على الإشعارات)، أو مع imageUrl لرسالة ترحيب تجمع
+ * صورة + نص + زر تفاعلي واحد كما تدعمه واجهة واتساب فعلياً (header من نوع
+ * image + body + action.buttons في نفس الرسالة).
+ * @param {string} to
+ * @param {string} bodyText
+ * @param {Array<{id: string, title: string}>} buttons - 3 كحد أقصى، العنوان 20 حرفاً كحد أقصى
+ * @param {string|null} imageUrl - رابط صورة عام اختياري تُعرض كـ header فوق النص والأزرار
+ */
+async function sendButtonMessage(to, bodyText, buttons, imageUrl = null) {
   const settings = whatsappSettingsRepository.get();
   const client = settings && buildClient(settings.phone_number_id, settings.access_token);
   if (!client) {
@@ -180,20 +191,25 @@ async function sendButtonMessage(to, bodyText, buttons) {
   }
 
   try {
+    const interactive = {
+      type: 'button',
+      body: { text: bodyText },
+      action: {
+        buttons: buttons.slice(0, 3).map((b) => ({
+          type: 'reply',
+          reply: { id: b.id, title: b.title.slice(0, 20) },
+        })),
+      },
+    };
+    if (imageUrl) {
+      interactive.header = { type: 'image', image: { link: imageUrl } };
+    }
+
     const response = await client.post('/messages', {
       messaging_product: 'whatsapp',
       to,
       type: 'interactive',
-      interactive: {
-        type: 'button',
-        body: { text: bodyText },
-        action: {
-          buttons: buttons.slice(0, 3).map((b) => ({
-            type: 'reply',
-            reply: { id: b.id, title: b.title.slice(0, 20) },
-          })),
-        },
-      },
+      interactive,
     });
     return { success: true, messageId: extractMessageId(response) };
   } catch (err) {

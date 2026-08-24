@@ -4,9 +4,10 @@ const express = require('express');
 const router = express.Router();
 
 const botSettingsController = require('../controllers/botSettingsController');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdminRole } = require('../middleware/auth');
 
 router.use(authenticateToken);
+router.use(requireAdminRole); // كل مسارات هذا الملف إدارية بحتة — لا وصول لوكلاء خدمة العملاء
 
 // GET /api/bot-settings/welcome
 router.get('/welcome', botSettingsController.getBotSettings);

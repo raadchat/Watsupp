@@ -6,10 +6,11 @@ const { body, param } = require('express-validator');
 const router = express.Router();
 
 const servicesController = require('../controllers/servicesController');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdminRole } = require('../middleware/auth');
 const { handleValidation } = require('../middleware/validate');
 
 router.use(authenticateToken);
+router.use(requireAdminRole); // كل مسارات هذا الملف إدارية بحتة — لا وصول لوكلاء خدمة العملاء
 
 // GET /api/services
 router.get('/', servicesController.getAllServices);

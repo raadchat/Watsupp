@@ -26,7 +26,7 @@ const login = asyncHandler(async (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: admin.id, username: admin.username, role: admin.role },
+    { id: admin.id, username: admin.username, role: admin.role, name: admin.name },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
@@ -35,7 +35,7 @@ const login = asyncHandler(async (req, res) => {
     success: true,
     data: {
       token,
-      admin: { id: admin.id, username: admin.username, role: admin.role },
+      admin: { id: admin.id, username: admin.username, role: admin.role, name: admin.name },
     },
   });
 });

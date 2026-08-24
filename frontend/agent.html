@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>خدمة العملاء — شركة دادية للصرافة والتحويلات</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell" style="grid-template-columns: 260px 1fr;">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="logo.jpg" alt="" class="brand-logo" onerror="this.style.display='none'" />
+        <span>خدمة العملاء</span>
+      </div>
+
+      <nav class="nav-group">
+        <button class="nav-item active" data-tab="queue">
+          <span>⏳ الطابور</span>
+          <span class="badge-count" id="queue-count">0</span>
+        </button>
+        <button class="nav-item" data-tab="mine">
+          <span>💬 محادثاتي</span>
+          <span class="badge-count" id="mine-count">0</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-admin">
+          <span>مرحباً:</span>
+          <strong id="agent-name">—</strong>
+        </div>
+        <button id="logout-btn" class="logout-btn">تسجيل الخروج</button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <h1 id="topbar-title">الطابور</h1>
+        <span class="live-badge"><span class="pulse-dot"></span> يتحدّث تلقائياً</span>
+      </header>
+
+      <main class="content">
+        <div class="bulk-grid" style="grid-template-columns: 340px 1fr;">
+          <!-- قائمة المحادثات (الطابور أو محادثاتي حسب التبويب) -->
+          <div class="card">
+            <div id="list-empty" class="state-block hidden">
+              <div class="state-icon">✅</div>
+              <h3>لا شيء هنا حالياً</h3>
+              <p id="list-empty-text">لا توجد محادثات بانتظارك الآن.</p>
+            </div>
+            <div id="conversation-list"></div>
+          </div>
+
+          <!-- المحادثة المفتوحة حالياً -->
+          <div class="card card-pad">
+            <div id="chat-placeholder" class="state-block">
+              <div class="state-icon">👈</div>
+              <h3>اختر محادثة</h3>
+              <p>اختر عميلاً من القائمة على اليمين لعرض محادثته والرد عليه.</p>
+            </div>
+
+            <div id="chat-panel" class="hidden">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+                <div>
+                  <h3 id="chat-phone" style="margin:0; font-size:15px;" class="mono"></h3>
+                  <p class="subtitle" id="chat-state" style="margin-top:2px;"></p>
+                </div>
+                <button type="button" class="btn btn-danger" id="end-conversation-btn">إنهاء المحادثة</button>
+              </div>
+
+              <div id="chat-thread" style="max-height: 420px; overflow-y: auto; display:flex; flex-direction:column; gap:8px; margin-bottom:14px;"></div>
+
+              <div class="toolbar">
+                <input type="text" id="chat-reply-input" placeholder="اكتب رداً..." style="flex:1;" />
+                <button type="button" class="btn btn-primary" id="chat-reply-btn">إرسال</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/agent.js"></script>
+</body>
+</html>

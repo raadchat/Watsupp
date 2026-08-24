@@ -4,6 +4,11 @@ const categoriesRepository = require('../database/repositories/categoriesReposit
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
+// نفس المعرّف المحجوز في conversationService.js لخيار "خدمة العملاء" الثابت —
+// مكرَّر هنا كنص حرفي بدل استيراده لتفادي أي احتمال دورة استيراد لاحقاً؛
+// كلاهما يجب أن يبقيا متطابقين حرفياً إن تغيّر أحدهما مستقبلاً.
+const RESERVED_CATEGORY_IDS = ['__customer_service__'];
+
 const getAllCategories = asyncHandler(async (req, res) => {
   const categories = categoriesRepository.findAll();
   res.json({ success: true, data: categories });
@@ -29,6 +34,10 @@ function validateParent(categoryId, parentCategoryId) {
 
 const createCategory = asyncHandler(async (req, res) => {
   const { category_id, name, description, display_order, status, parent_category_id } = req.body;
+
+  if (RESERVED_CATEGORY_IDS.includes(category_id)) {
+    throw new AppError(ErrorCodes.CATEGORY_ID_EXISTS, 'هذا المعرّف محجوز لخيار "خدمة العملاء" الثابت، اختر معرّفاً آخر', 409);
+  }
 
   const existing = categoriesRepository.findByCategoryId(category_id);
   if (existing) {

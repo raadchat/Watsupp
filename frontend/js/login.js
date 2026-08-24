@@ -1,9 +1,13 @@
 // js/login.js
 
+function redirectByRole(admin) {
+  location.href = admin && admin.role === 'agent' ? 'agent.html' : 'dashboard.html';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // إذا كان هناك توكن مخزّن مسبقاً، لا داعي لإعادة تسجيل الدخول
   if (getToken()) {
-    location.href = 'dashboard.html';
+    redirectByRole(getStoredAdmin());
     return;
   }
 
@@ -26,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const result = await api.login(username, password);
       setToken(result.data.token);
       setStoredAdmin(result.data.admin);
-      location.href = 'dashboard.html';
+      redirectByRole(result.data.admin); // وكيل خدمة عملاء → صفحته المبسّطة، مدير → اللوحة الكاملة
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.classList.remove('hidden');

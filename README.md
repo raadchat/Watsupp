@@ -81,27 +81,34 @@ whatsapp-bot-admin/
 │
 ├── frontend/
 │   ├── login.html
-│   ├── dashboard.html
+│   ├── dashboard.html        ← لوحة المدير الكاملة
+│   ├── agent.html            ← واجهة وكيل خدمة العملاء المبسّطة
+│   ├── logo.jpg              ← ضعه أنت هنا (اسم الملف والأبعاد مضبوطان مسبقاً في CSS)
+│   ├── uploads/               ← صور مرفوعة (رسالة الترحيب) — يُنشئه الخادم تلقائياً
 │   ├── css/
 │   │   └── style.css
 │   └── js/
 │       ├── api.js            ← API helper موحّد (JWT/أخطاء/401)
-│       ├── login.js
-│       └── dashboard.js
+│       ├── login.js          ← يوجّه حسب الدور بعد الدخول (مدير/وكيل)
+│       ├── dashboard.js
+│       └── agent.js
 │
 ├── backend/
 │   ├── server.js
 │   ├── routes/
 │   │   ├── auth.js
-│   │   ├── categories.js     ← المستوى الأول في قائمة واتساب
-│   │   ├── services.js
-│   │   ├── customers.js
-│   │   ├── messages.js       ← bulk + status
-│   │   ├── settings.js       ← إعدادات اتصال واتساب
+│   │   ├── categories.js     ← المستوى الأول في قائمة واتساب (إداري فقط)
+│   │   ├── services.js       (إداري فقط)
+│   │   ├── customers.js      ← قائمة/تفاصيل (إداري) + محادثة/رد (إداري أو وكيل مُسنَد)
+│   │   ├── messages.js       ← bulk + status (إداري فقط)
+│   │   ├── settings.js       ← إعدادات اتصال واتساب (إداري فقط)
+│   │   ├── botSettings.js    ← رسالة الترحيب (إداري فقط)
+│   │   ├── customerService.js ← طابور/تولّي/إنهاء خدمة العملاء (إداري أو وكيل)
+│   │   ├── users.js          ← إدارة الوكلاء (إداري فقط)
 │   │   └── whatsapp.js       ← webhook
 │   │
 │   ├── middleware/
-│   │   ├── auth.js           ← authenticateToken
+│   │   ├── auth.js           ← authenticateToken + requireAdminRole
 │   │   ├── errorHandler.js
 │   │   ├── validate.js
 │   │   └── rateLimiter.js
@@ -110,28 +117,34 @@ whatsapp-bot-admin/
 │   │   ├── authController.js
 │   │   ├── categoriesController.js
 │   │   ├── servicesController.js
-│   │   ├── customersController.js
-│   │   ├── messagesController.js
-│   │   ├── settingsController.js  ← إعدادات اتصال واتساب + اختبار حي
+│   │   ├── customersController.js     ← + سجل المحادثة والرد اليدوي
+│   │   ├── messagesController.js      ← + شريحة الموافقين على الإشعارات
+│   │   ├── settingsController.js
+│   │   ├── botSettingsController.js   ← رسالة الترحيب + رفع صورة
+│   │   ├── customerServiceController.js ← طابور/تولّي/إنهاء
+│   │   ├── usersController.js         ← إدارة الوكلاء
 │   │   └── webhookController.js
 │   │
 │   ├── services/
-│   │   ├── whatsappService.js    ← إرسال عبر WhatsApp Cloud API
+│   │   ├── whatsappService.js    ← WhatsApp Cloud API (نص/قائمة/صورة/أزرار)
 │   │   ├── messageQueue.js       ← طابور الإرسال الجماعي
-│   │   └── conversationService.js ← "القائمة الديناميكية" على مستويين + آلة الحالة
+│   │   └── conversationService.js ← آلة الحالة الكاملة: ترحيب، أقسام متداخلة،
+│   │                                 أنواع رد الخدمات، موافقة الإشعارات، خدمة العملاء
 │   │
 │   ├── database/
-│   │   ├── db.js                 ← يشمل ترقية تلقائية لعمود services.category_id
+│   │   ├── db.js                 ← كل الترقيات التلقائية (راجع القسم 3)
 │   │   ├── schema.sql
 │   │   ├── seed.js               ← إنشاء أول Admin
 │   │   └── repositories/
-│   │       ├── adminsRepository.js
-│   │       ├── categoriesRepository.js
-│   │       ├── servicesRepository.js
-│   │       ├── customersRepository.js
-│   │       ├── messagesRepository.js
+│   │       ├── adminsRepository.js        ← + وكلاء وتقييماتهم
+│   │       ├── categoriesRepository.js    ← + تداخل بلا حد (parent_category_id)
+│   │       ├── servicesRepository.js      ← + أنواع الرد
+│   │       ├── customersRepository.js     ← + إشعارات وخدمة عملاء
+│   │       ├── messagesRepository.js      ← + sent_by
 │   │       ├── bulkJobsRepository.js
-│   │       └── whatsappSettingsRepository.js  ← صف واحد، مع تراجع تلقائي لـ .env
+│   │       ├── whatsappSettingsRepository.js
+│   │       ├── botSettingsRepository.js       ← رسالة الترحيب
+│   │       └── customerServiceSettingsRepository.js ← تفعيل/تسمية القسم الثابت
 │   │
 │   └── utils/
 │       ├── errors.js         ← AppError + ErrorCodes
@@ -151,30 +164,39 @@ whatsapp-bot-admin/
 ملخص:
 
 ```
-admins          (id, username UNIQUE, password_hash, role, created_at, updated_at)
-categories      (id, category_id UNIQUE, name, description, display_order, status, created_at, updated_at)
-services        (id, service_id UNIQUE, name, description, category_id → categories.id,
-                 status, created_at, updated_at)
-customers       (id, phone_number UNIQUE, last_contact, conversation_state,
-                 status, last_selected_service_id → services.id, created_at, updated_at)
+admins          (id, username UNIQUE, name, password_hash, role, rating_total, rating_count,
+                 created_at, updated_at)
+categories      (id, category_id UNIQUE, name, description, display_order, status,
+                 parent_category_id → categories.id, created_at, updated_at)
+services        (id, service_id UNIQUE, name, description, category_id → categories.id, status,
+                 reply_type, input_format, input_prefix, validation_error_message,
+                 external_api_url, external_service_code, created_at, updated_at)
+customers       (id, phone_number UNIQUE, last_contact, conversation_state, status,
+                 last_selected_service_id → services.id, notifications_opt_in,
+                 assigned_agent_id → admins.id, created_at, updated_at)
 messages        (id, customer_id → customers.id, direction, message, status,
-                 whatsapp_message_id, created_at)
+                 whatsapp_message_id, sent_by, created_at)
 bulk_jobs       (id, message_text, total_count, sent_count, failed_count,
                  status, created_by → admins.id, created_at, updated_at)
 bulk_job_items  (id, job_id → bulk_jobs.id, phone_number, status, error,
                  whatsapp_message_id, created_at, updated_at)
 whatsapp_settings (id=1 فقط, phone_number_id, access_token, verify_token,
                  business_account_id, status, last_tested_at, last_test_result, updated_at)
+bot_settings    (id=1 فقط, welcome_message, welcome_image_filename, updated_at)
+customer_service_settings (id=1 فقط, enabled, label, updated_at)
 ```
 
 `bulk_jobs`/`bulk_job_items` هما الجدولان الإضافيان لإدارة طابور الرسائل
 الجماعية (مسموح بهما صراحة في المواصفات عند الحاجة).
 
-`categories` أُضيف لاحقاً لدعم قائمة على مستويين (أقسام ← خدمات، بنفس مبدأ
-بوت الكريمي). `services.category_id` عمود مُرحَّل تلقائياً وبأمان عند أول
-تشغيل بعد التحديث — `db.js` يتحقق من وجوده، وإن كانت هناك خدمات قديمة بحقل
-`category` نصي، يُنشئ لها صفوف `categories` حقيقية (بلا تكرار للأسماء
-المتطابقة) ويربطها به. لا حاجة لأي أمر يدوي.
+كل عمود/جدول أُضيف بعد التشغيل الأول للمشروع يمر عبر ترقية تلقائية وآمنة
+في `db.js` عند كل إقلاع — تحقّقتُ فعلياً أن قاعدة بيانات حقيقية بها بيانات
+(مديرون، خدمات بأقسام نصية قديمة، عملاء بحالات مختلفة) تُرقَّى بلا فقدان
+أي صف عبر كل الترقيات مجتمعة دفعة واحدة. الحالة الوحيدة التي تطلّبت إعادة
+بناء الجدول بالكامل (بدل `ALTER TABLE` بسيطة) هي توسيع قيد CHECK على
+`customers.conversation_state` لإضافة حالات خدمة العملاء الجديدة — SQLite
+لا يدعم تعديل قيود CHECK قائمة مباشرة، فيُنشأ جدول جديد بالقيد المحدَّث،
+تُنسَخ إليه كل البيانات، ثم يُستبدَل القديم به داخل معاملة واحدة (BEGIN/COMMIT).
 
 ---
 
@@ -190,26 +212,42 @@ whatsapp_settings (id=1 فقط, phone_number_id, access_token, verify_token,
 { "success": false, "error": { "code": "SERVICE_NOT_FOUND", "message": "الخدمة غير موجودة" } }
 ```
 
-| Method | المسار | حماية JWT | الوصف |
+| Method | المسار | الصلاحية | الوصف |
 |---|---|:---:|---|
-| POST | `/api/login` | ✗ | `{ username, password }` → `{ token, admin }` |
-| GET | `/api/categories` | ✓ | كل الأقسام |
-| POST | `/api/categories` | ✓ | `{ category_id, name, description, display_order, status }` |
-| PUT | `/api/categories/:id` | ✓ | `{ name, description, display_order, status }` |
-| DELETE | `/api/categories/:id` | ✓ | يُرفض إن كانت خدمات لا تزال مرتبطة بالقسم |
-| GET | `/api/services` | ✓ | كل الخدمات (مع اسم القسم عبر JOIN) |
-| POST | `/api/services` | ✓ | `{ service_id, name, description, category_id, status }` |
-| PUT | `/api/services/:id` | ✓ | `{ name, description, category_id, status }` |
-| DELETE | `/api/services/:id` | ✓ | حذف خدمة |
-| GET | `/api/customers?search=&page=&pageSize=` | ✓ | بحث برقم الهاتف + صفحات |
-| GET | `/api/customers/:id` | ✓ | عميل واحد |
-| POST | `/api/messages/bulk` | ✓ | `multipart/form-data`: `message` + (`file` و/أو `phone_numbers`) |
-| GET | `/api/messages/status` | ✓ | آخر 20 وظيفة إرسال جماعي وحالتها |
-| GET | `/api/settings/whatsapp` | ✓ | بيانات الاتصال الحالية (`access_token` مُقنَّع دائماً) |
-| PUT | `/api/settings/whatsapp` | ✓ | `{ phone_number_id, access_token?, verify_token, business_account_id? }` — يحفظ **ويختبر فوراً** |
-| POST | `/api/settings/whatsapp/test` | ✓ | إعادة اختبار ما هو محفوظ بالفعل، بلا جسم طلب |
+| POST | `/api/login` | ✗ | `{ username, password }` → `{ token, admin }` (يشمل `role`/`name`) |
+| GET | `/api/categories` | مدير | كل الأقسام (تشمل `parent_category_id`) |
+| POST | `/api/categories` | مدير | `{ category_id, name, description, display_order, status, parent_category_id? }` |
+| PUT | `/api/categories/:id` | مدير | نفس الحقول أعلاه |
+| DELETE | `/api/categories/:id` | مدير | يُرفض إن كانت خدمات أو أقسام فرعية لا تزال مرتبطة به |
+| GET | `/api/services` | مدير | كل الخدمات (مع اسم القسم واسم الرد) |
+| POST | `/api/services` | مدير | `{ service_id, name, description, category_id, status, reply_type, input_format?, input_prefix?, validation_error_message?, external_api_url?, external_service_code? }` |
+| PUT | `/api/services/:id` | مدير | نفس الحقول أعلاه |
+| DELETE | `/api/services/:id` | مدير | حذف خدمة |
+| GET | `/api/customers?search=&page=&pageSize=` | مدير | بحث برقم الهاتف + صفحات |
+| GET | `/api/customers/:id` | مدير | عميل واحد |
+| GET | `/api/customers/:id/messages` | مدير/وكيل* | سجل المحادثة كاملاً |
+| POST | `/api/customers/:id/messages` | مدير/وكيل* | `{ message }` — رد يدوي مباشر خارج آلة حالة البوت |
+| POST | `/api/messages/bulk` | مدير | `multipart/form-data`: `message` + `recipient_type` (`manual` أو `opted_in`) + (`file`/`phone_numbers` إن كان `manual`) |
+| GET | `/api/messages/status` | مدير | آخر 20 وظيفة إرسال جماعي وحالتها |
+| GET | `/api/messages/opted-in-count` | مدير | عدد العملاء الموافقين على الإشعارات |
+| GET | `/api/settings/whatsapp` | مدير | بيانات الاتصال الحالية (`access_token` مُقنَّع دائماً) |
+| PUT | `/api/settings/whatsapp` | مدير | `{ phone_number_id, access_token?, verify_token, business_account_id? }` — يحفظ **ويختبر فوراً** |
+| POST | `/api/settings/whatsapp/test` | مدير | إعادة اختبار ما هو محفوظ بالفعل، بلا جسم طلب |
+| GET | `/api/bot-settings/welcome` | مدير | رسالة الترحيب الحالية (نص + رابط صورة إن وُجدت) |
+| PUT | `/api/bot-settings/welcome` | مدير | `multipart/form-data`: `welcome_message` + `image?` + `remove_image?` |
+| GET | `/api/customer-service/settings` | مدير/وكيل | حالة تفعيل/تسمية خيار "خدمة العملاء" |
+| PUT | `/api/customer-service/settings` | مدير | `{ enabled, label? }` |
+| GET | `/api/customer-service/queue` | مدير/وكيل | طابور الانتظار العام |
+| GET | `/api/customer-service/my-conversations` | مدير/وكيل | محادثاتي النشطة أنا |
+| POST | `/api/customer-service/:customerId/claim` | مدير/وكيل | يُسنِد العميل لي، يُرسل له إشعار انضمام باسمي |
+| POST | `/api/customer-service/:customerId/end` | مدير/وكيل** | ينهي، يُرسل دعوة تقييم 5 نجوم للعميل |
+| GET | `/api/users` | مدير | كل الوكلاء مع متوسط تقييمهم |
+| POST | `/api/users` | مدير | `{ username, name, password }` — ينشئ وكيلاً جديداً (`role='agent'`) |
 | GET | `/webhook` | ✗ | تحقق Meta (`hub.mode`/`hub.verify_token`/`hub.challenge`) |
 | POST | `/webhook` | ✗ | استقبال رسائل واتساب الواردة |
+
+\* الوكيل مقصور على العميل المُسنَد له حالياً فقط (403 على أي عميل آخر).
+\** الوكيل مقصور على إنهاء محادثاته المُسنَدة له فقط.
 
 مثال، إضافة قسم ثم خدمة داخله:
 
@@ -359,6 +397,68 @@ npm run seed:admin
 ```
 
 سيطلب منك اسم المستخدم وكلمة المرور، ثم يخزّن `bcrypt` hash فقط.
+
+---
+
+## 9.5) ميزات إضافية
+
+### أ) رسالة الترحيب (أي رسالة أولى/غير مفهومة من العميل)
+
+من اللوحة → **إعدادات البوت**: عدّل النص وارفع صورة اختيارية. تُرسَل رسالة
+واتساب تفاعلية واحدة تجمع الصورة + النص + زر **"عرض القائمة"** — ضغطه يفتح
+الأقسام مباشرة، فلا يحتاج العميل لكتابة أي كلمة بالضبط. رفع الصورة يتطلب
+`PUBLIC_BASE_URL` في `.env` (رابط عام يصل إليه واتساب لجلب الصورة)، وإلا
+تُرسَل الرسالة نصاً فقط بلا صورة.
+
+### ب) أقسام متداخلة بلا حد للعمق
+
+من اللوحة → **الأقسام**: عند إضافة/تعديل قسم، اختر "القسم الأب" لجعله
+فرعياً تابعاً لقسم آخر — بلا حد على عدد المستويات. اللوحة تمنع اختيار قسم
+كأب لنفسه أو لأحد أجداده (حلقة). في واتساب: كل اختيار قسم له أبناء نشطون
+يفتح قائمة أبنائه؛ الوصول لقسم "ورقة" (بلا أبناء) يعرض خدماته.
+
+### ج) أنواع رد الخدمات
+
+عند إضافة/تعديل خدمة، اختر **نوع الرد**:
+- **استعلام عن معلومة معروفة**: حقل "الوصف" هو نص الرد نفسه، يُرسَل فوراً.
+- **يطلب من العميل إرسال بيانات**: تحدّد صيغة المدخل (أرقام/أرقام وحروف/حروف
+  فقط)، بادئة إلزامية اختيارية (مثال: `AC`)، ورسالة خطأ مخصَّصة تكتبها أنت
+  تظهر عند إدخال غير مطابق (والعميل يبقى قادراً على إعادة المحاولة فوراً).
+  اختيارياً: اربطها برابط API خارجي — بعد نجاح التحقق يُرسِل النظام إليه
+  `POST` بجسم `{ service_id, service_code, phone_number, input }`، ويتوقع
+  رداً بصيغة `{ success: true, message: "..." }` يُرسَل للعميل كما هو (أي
+  خطأ أو رد غير متوقع من ذلك النظام الخارجي يُظهر رسالة الخطأ المخصَّصة بدلاً
+  منه، ولا يُسرَّب أي تفصيل تقني للعميل).
+
+### د) الموافقة على الإشعارات + شريحة إرسال مخصَّصة
+
+عند نهاية أي محادثة (أول مرة فقط لكل عميل)، يُرسَل سؤال نعم/لا عبر أزرار
+واتساب. الموافقون يُحتسَبون تلقائياً في **الرسائل الجماعية** كخيار "مستلمين"
+مستقل (بعدد محدَّث حياً)، منفصل تماماً عن رفع الملفات/الإدخال اليدوي الأصلي.
+
+### هـ) عرض المحادثات والرد المباشر
+
+من اللوحة → **العملاء** → زر 💬 على أي صف يفتح سجل محادثته الكامل مع مربع
+رد مباشر — يُرسَل عبر واتساب فوراً خارج آلة حالة البوت تماماً، ويُسجَّل
+باسم من أرسله.
+
+### و) خدمة العملاء والوكلاء
+
+من اللوحة → **إعدادات البوت**: فعّل خيار "خدمة العملاء" — يظهر تلقائياً
+كآخر خيار في قائمة الأقسام الرئيسية (يعاد ترقيمه تلقائياً حسب عدد الأقسام
+الحقيقية، فيبقى دائماً الأخير)، وليس صفاً حقيقياً في جدول الأقسام فلا يمكن
+حذفه أو الخلط بينه وبين أقسام المدير.
+
+من اللوحة → **المستخدمون** (مدير فقط): أضف وكيلاً بالاسم واسم المستخدم
+وكلمة المرور. الوكيل يسجّل الدخول من **نفس صفحة الدخول**، ويُحوَّل تلقائياً
+إلى `agent.html` — صفحة مبسّطة بتبويبين: **الطابور** (كل من ينتظر أي وكيل)
+و**محادثاتي** (المُسنَدة له فعلاً). تولّي محادثة يُرسل للعميل تلقائياً
+"تمت الموافقة على طلب مرسل خدمة العملاء، [اسم الوكيل] يتحدث معك الآن".
+إنهاء المحادثة يُرسل للعميل طلب تقييم 5 نجوم (قائمة تفاعلية، لأن واتساب
+يسمح بـ 3 أزرار فقط كحد أقصى — لا يكفي لـ 5 خيارات)، ويُضاف تلقائياً لرصيد
+الوكيل الظاهر كمتوسط (مثال: 4.3/5) في قائمة المستخدمين. الوكيل مقصور
+تقنياً على عملائه المُسنَدين فقط (403 على أي محاولة وصول لغيرهم)، ولا يرى
+أي قسم إداري آخر (الأقسام، الخدمات، الإعدادات، ...).
 
 ---
 

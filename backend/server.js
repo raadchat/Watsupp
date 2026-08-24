@@ -35,6 +35,8 @@ const customersRoutes = require('./routes/customers');
 const messagesRoutes = require('./routes/messages');
 const settingsRoutes = require('./routes/settings');
 const botSettingsRoutes = require('./routes/botSettings');
+const customerServiceRoutes = require('./routes/customerService');
+const usersRoutes = require('./routes/users');
 const whatsappRoutes = require('./routes/whatsapp');
 
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -65,6 +67,8 @@ app.use('/api/customers', customersRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/bot-settings', botSettingsRoutes);
+app.use('/api/customer-service', customerServiceRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/webhook', whatsappRoutes);
 
 // أي مسار /api/* غير معروف يُعامَل كـ 404 بالصيغة الموحدة (وليس صفحة HTML افتراضية)

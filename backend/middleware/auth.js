@@ -20,9 +20,22 @@ function authenticateToken(req, res, next) {
         new AppError(ErrorCodes.UNAUTHORIZED, 'رمز الدخول غير صالح أو منتهي الصلاحية', 401)
       );
     }
-    req.admin = decoded; // { id, username, role, iat, exp }
+    req.admin = decoded; // { id, username, role, name, iat, exp }
     next();
   });
 }
 
-module.exports = { authenticateToken };
+/**
+ * يُستخدم بعد authenticateToken على المسارات الإدارية البحتة (الأقسام،
+ * الخدمات، الإرسال الجماعي، الإعدادات، إدارة المستخدمين). وكلاء خدمة
+ * العملاء (role='agent') يُرفَضون بـ 403 — واجهتهم مقصورة على مسارات
+ * customer-service (الطابور، محادثاتهم المُسنَدة، الرد) المفتوحة لكلا الدورين.
+ */
+function requireAdminRole(req, res, next) {
+  if (req.admin?.role !== 'admin') {
+    return next(new AppError(ErrorCodes.FORBIDDEN, 'هذا الإجراء متاح للمدير فقط', 403));
+  }
+  next();
+}
+
+module.exports = { authenticateToken, requireAdminRole };

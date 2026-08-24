@@ -89,6 +89,33 @@ function findOptedInPhoneNumbers() {
     .map((r) => r.phone_number);
 }
 
+/** طابور خدمة العملاء: من ينتظر وكيلاً بعد، مرتَّبين الأقدم أولاً (عدالة الدور). */
+function findWaitingForAgent() {
+  return db
+    .prepare(
+      `SELECT * FROM customers WHERE conversation_state = 'CUSTOMER_SERVICE_WAITING' ORDER BY updated_at ASC`
+    )
+    .all();
+}
+
+/** محادثات خدمة العملاء المُسندة حالياً لوكيل مُعيَّن (نشطة الآن، وليس الطابور العام). */
+function findActiveByAgent(agentId) {
+  return db
+    .prepare(
+      `SELECT * FROM customers
+       WHERE assigned_agent_id = ? AND conversation_state = 'CUSTOMER_SERVICE_ACTIVE'
+       ORDER BY updated_at ASC`
+    )
+    .all(agentId);
+}
+
+function assignAgent(customerId, agentId, newState) {
+  db.prepare(
+    `UPDATE customers SET assigned_agent_id = ?, conversation_state = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(agentId, newState, customerId);
+  return findById(customerId);
+}
+
 module.exports = {
   findAll,
   findById,
@@ -99,4 +126,7 @@ module.exports = {
   updateNotificationOptIn,
   countOptedIn,
   findOptedInPhoneNumbers,
+  findWaitingForAgent,
+  findActiveByAgent,
+  assignAgent,
 };

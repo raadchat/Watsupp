@@ -19,7 +19,8 @@ function ask(question) {
 async function main() {
   console.log('=== إنشاء حساب مدير جديد للوحة التحكم ===\n');
 
-  const username = (await ask('اسم المستخدم: ')).trim();
+  const username = (await ask('اسم المستخدم (للدخول): ')).trim();
+  const name = (await ask('الاسم الكامل (اختياري، Enter لتركه كاسم المستخدم): ')).trim();
   const password = await ask('كلمة المرور (6 أحرف على الأقل): ');
 
   if (!username) {
@@ -47,7 +48,7 @@ async function main() {
   const saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS) || 12;
   const password_hash = await bcrypt.hash(password, saltRounds);
 
-  const admin = adminsRepository.create({ username, password_hash, role: 'admin' });
+  const admin = adminsRepository.create({ username, password_hash, role: 'admin', name: name || username });
 
   console.log(`\n✓ تم إنشاء المدير بنجاح: "${admin.username}" (ID: ${admin.id})`);
   console.log('يمكنك الآن تسجيل الدخول من صفحة login.html بهذه البيانات.');
