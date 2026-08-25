@@ -6,10 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const botSettingsRepository = require('../database/repositories/botSettingsRepository');
+const { getUploadsDir } = require('../utils/paths');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
-const UPLOADS_DIR = path.join(__dirname, '..', '..', 'frontend', 'uploads');
+const UPLOADS_DIR = getUploadsDir();
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }

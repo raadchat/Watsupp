@@ -155,7 +155,11 @@ function getPublicBaseUrl() {
   // PUBLIC_BASE_URL في .env كتراجع، ثم رابط محلي لن تصل إليه Meta فعلياً
   // (يعني عدم ضبط أي منهما = لن تُرسَل صورة الترحيب فعلياً حتى يُضبط أحدهما).
   const botSettings = botSettingsRepository.get();
-  return botSettings?.public_base_url || process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  const raw = botSettings?.public_base_url || process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  // إزالة أي شرطة مائلة زائدة في النهاية — إن أدخل المدير الرابط منتهياً
+  // بـ "/" (شائع عند نسخه من شريط عنوان المتصفح)، فسينتج بدون هذا "//uploads/..."
+  // بمسار مزدوج قد يفشل بعض المضيفين/الوسطاء (مثل طبقة Railway) في جلبه بشكل صحيح
+  return raw.replace(/\/+$/, '');
 }
 
 /**
@@ -174,6 +178,18 @@ async function sendWelcomeMessage(customer) {
   if (botSettings?.welcome_image_filename) {
     const imageUrl = `${getPublicBaseUrl()}/uploads/${botSettings.welcome_image_filename}`;
     result = await whatsappService.sendImageMessage(customer.phone_number, imageUrl, messageText);
+
+    if (!result.success) {
+      // فشل إرسال الصورة (رابط غير صالح، أو الملف غير موجود فعلياً على القرص
+      // — شائع بعد إعادة نشر على منصة بنظام ملفات مؤقت مثل Railway بلا
+      // Volume دائم، راجع README). لا نترك العميل بلا أي رد: نُعيد المحاولة
+      // كنص عادي فوراً بدل ترك الترحيب يختفي بصمت والانتقال مباشرة للقائمة.
+      console.error(
+        `[conversationService] فشل إرسال صورة الترحيب (${imageUrl})، إعادة المحاولة كنص:`,
+        result.error
+      );
+      result = await whatsappService.sendTextMessage(customer.phone_number, messageText);
+    }
   } else {
     result = await whatsappService.sendTextMessage(customer.phone_number, messageText);
   }

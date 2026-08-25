@@ -21,9 +21,12 @@ if (missing.length > 0) {
 }
 
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+
+const { getUploadsDir } = require('./utils/paths');
 
 // يهيّئ الاتصال وينفّذ schema.sql عند أول استيراد
 require('./database/db');
@@ -73,6 +76,16 @@ app.use('/webhook', whatsappRoutes);
 
 // أي مسار /api/* غير معروف يُعامَل كـ 404 بالصيغة الموحدة (وليس صفحة HTML افتراضية)
 app.use('/api', notFoundHandler);
+
+// --- صور مرفوعة (رسالة الترحيب) ----------------------------------------------
+// مسار مستقل عن ملفات اللوحة الثابتة عمداً، ويُقرأ من UPLOADS_DIR القابل
+// للضبط — على منصات بنظام ملفات مؤقت (Railway مثلاً) اضبطه على مسار داخل
+// Volume دائم بدل الاعتماد على القرص المؤقت الافتراضي (راجع README).
+const UPLOADS_DIR = getUploadsDir();
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // --- لوحة التحكم (ملفات ثابتة) ----------------------------------------------
 app.use(express.static(FRONTEND_DIR));
