@@ -74,9 +74,12 @@
               <div id="chat-thread" style="max-height: 420px; overflow-y: auto; display:flex; flex-direction:column; gap:8px; margin-bottom:14px;"></div>
 
               <div class="toolbar">
+                <input type="file" id="chat-reply-file" accept="image/jpeg,image/png,video/mp4,application/pdf" style="display:none;" />
+                <button type="button" class="btn btn-secondary" id="chat-reply-attach-btn" title="إرفاق صورة/فيديو/PDF">📎</button>
                 <input type="text" id="chat-reply-input" placeholder="اكتب رداً..." style="flex:1;" />
                 <button type="button" class="btn btn-primary" id="chat-reply-btn">إرسال</button>
               </div>
+              <div id="chat-reply-file-name" class="subtitle" style="display:none; margin-top:6px;"></div>
             </div>
           </div>
         </div>

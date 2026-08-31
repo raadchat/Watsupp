@@ -25,6 +25,8 @@ const botSettingsRepository = require('../database/repositories/botSettingsRepos
 const customerServiceSettingsRepository = require('../database/repositories/customerServiceSettingsRepository');
 const adminsRepository = require('../database/repositories/adminsRepository');
 const whatsappService = require('./whatsappService');
+const mediaService = require('./mediaService');
+const botTexts = require('./botTexts');
 const axios = require('axios');
 
 const SERVICES_TRIGGER_WORDS = ['الخدمات', 'خدمات', 'services', 'menu', 'قائمة', 'show_menu'];
@@ -33,6 +35,13 @@ const SERVICES_TRIGGER_WORDS = ['الخدمات', 'خدمات', 'services', 'men
 // فلا يمكن أن يتصادم مع category_id يُنشئه المدير (categoriesController يمنع
 // استخدام هذه القيمة تحديداً عند إنشاء قسم عادي).
 const CUSTOMER_SERVICE_RESERVED_ID = '__customer_service__';
+
+// معرّف Payload محجوز لزر "رجوع" في قوائم واتساب فقط (المرحلة 1) — ثابت
+// دائماً حتى لو تغيّر النص الظاهر لاحقاً من لوحة التحكم (المرحلة 4: نظام
+// النصوص المركزي، مفتاح backButton). محجوز أيضاً كـ category_id وservice_id
+// (categoriesController وservicesController يمنعان استخدام هذه القيمة
+// تحديداً عند الإنشاء).
+const BACK_RESERVED_ID = 'BACK';
 
 // حدود رسالة القائمة التفاعلية في WhatsApp Cloud API (تنطبق على كل مستوى على حدة)
 const MAX_LIST_ROWS = 10;
@@ -45,37 +54,46 @@ function truncate(str, len) {
 }
 
 /** يبني sections لرسالة قائمة الأقسام (المستوى الأول) مباشرة من قاعدة البيانات.
- * customerServiceLabel (إن مُرِّر) يُضاف كصف أخير دائماً — مع حجز مكانه مسبقاً
- * حتى لا يُقطَع بحد الـ 10 صفوف إن وُجدت 10 أقسام حقيقية بالضبط. */
-function buildCategoryListSections(categories, customerServiceLabel = null) {
-  const reserveSlot = customerServiceLabel ? 1 : 0;
-  const limited = categories.slice(0, MAX_LIST_ROWS - reserveSlot);
-  const rows = limited.map((c) => ({
-    id: c.category_id,
-    title: truncate(c.name, MAX_TITLE_LEN),
-    description: truncate(c.description || '', MAX_DESC_LEN),
-  }));
+ * customerServiceLabel (إن مُرِّر) يُضاف كصف أخير دائماً، وincludeBack (المرحلة 1)
+ * يُضاف كصف أول دائماً — كلاهما يحجز مكانه مسبقاً حتى لا يُقطَع بحد الـ 10
+ * صفوف. عملياً الاثنان لا يجتمعان أبداً في نفس الرسالة (خدمة العملاء تظهر في
+ * الجذر فقط حيث لا يوجد رجوع أصلاً)، لكن الدالة تدعم الحالتين معاً بأمان. */
+function buildCategoryListSections(categories, customerServiceLabel = null, includeBack = false) {
+  const reserveSlots = (customerServiceLabel ? 1 : 0) + (includeBack ? 1 : 0);
+  const limited = categories.slice(0, MAX_LIST_ROWS - reserveSlots);
+  const rows = [];
+  if (includeBack) {
+    rows.push({ id: BACK_RESERVED_ID, title: botTexts.getText('backButton'), description: '' });
+  }
+  rows.push(
+    ...limited.map((c) => ({
+      id: c.category_id,
+      title: truncate(c.name, MAX_TITLE_LEN),
+      description: truncate(c.description || '', MAX_DESC_LEN),
+    }))
+  );
   if (customerServiceLabel) {
     rows.push({ id: CUSTOMER_SERVICE_RESERVED_ID, title: truncate(customerServiceLabel, MAX_TITLE_LEN), description: '' });
   }
-  return [{ title: 'الأقسام المتاحة', rows }];
+  return [{ title: botTexts.getText('categoryListTitle'), rows }];
 }
 
 /** يبني sections لرسالة قائمة الخدمات (المستوى الثاني) مباشرة من قاعدة البيانات. */
-function buildServiceListSections(services) {
+function buildServiceListSections(services, includeBack = false) {
   // ملاحظة: WhatsApp Cloud API يسمح بحد أقصى 10 صفوف في رسالة قائمة واحدة.
-  // إذا تجاوز عدد الخدمات النشطة (ضمن القسم) هذا الحد، تُعرض أول 10 فقط
-  // (قيد حقيقي من واجهة واتساب، وليس افتراضاً اعتباطياً).
+  // إذا تجاوز عدد الخدمات النشطة (ضمن القسم) هذا الحد (بعد حجز صف الرجوع إن
+  // وُجد)، تُعرض أول 10 فقط (قيد حقيقي من واجهة واتساب، وليس افتراضاً اعتباطياً).
   //
   // description تُترَك فارغة عمداً: لا نعرض معاينة نص الرد تحت اسم الخدمة في
   // القائمة — الرد لا يظهر للعميل إلا بعد اختيار اسم الخدمة، وليس قبله.
-  const limited = services.slice(0, MAX_LIST_ROWS);
-  const rows = limited.map((s) => ({
-    id: s.service_id,
-    title: truncate(s.name, MAX_TITLE_LEN),
-    description: '',
-  }));
-  return [{ title: 'الخدمات المتاحة', rows }];
+  const reserveSlots = includeBack ? 1 : 0;
+  const limited = services.slice(0, MAX_LIST_ROWS - reserveSlots);
+  const rows = [];
+  if (includeBack) {
+    rows.push({ id: BACK_RESERVED_ID, title: botTexts.getText('backButton'), description: '' });
+  }
+  rows.push(...limited.map((s) => ({ id: s.service_id, title: truncate(s.name, MAX_TITLE_LEN), description: '' })));
+  return [{ title: botTexts.getText('serviceListTitle'), rows }];
 }
 
 async function sendOutbound(customer, text, whatsappResult) {
@@ -89,14 +107,19 @@ async function sendOutbound(customer, text, whatsappResult) {
 }
 
 /**
- * المستوى الحالي من شجرة الأقسام: يعرض أبناء parentDbId النشطين (أو
- * الأقسام الرئيسية إن مُرِّر null/تُرك فارغاً). لا حد مبرمَج على عمق
- * التداخل — الاختيار المتكرر لقسم له أبناء يستدعي هذه الدالة من جديد
- * بمعرّف ذلك القسم، وهكذا حتى الوصول لقسم "ورقة" فتُعرض خدماته.
+ * المستوى الحالي من شجرة الأقسام. `stack` هو مسار معرّفات الأقسام الرقمية
+ * من الجذر حتى (وشاملاً) الموضع الحالي — []  يعني الجذر (المستوى الأول)،
+ * و[12, 25] يعني "أبناء القسم 25، الذي هو ابن القسم 12". لا حد مبرمَج على
+ * عمق التداخل — الاختيار المتكرر لقسم له أبناء يستدعي هذه الدالة من جديد
+ * بـ stack أطول بعنصر واحد، وهكذا حتى الوصول لقسم "ورقة" فتُعرض خدماته.
  * إن لم يُنشئ المدير أي قسم رئيسي بعد، يتراجع تلقائياً لعرض كل الخدمات
  * النشطة كقائمة مسطّحة (السلوك الأصلي) بدل توقف البوت.
+ *
+ * المرحلة 1: يُحفَظ stack في customers.navigation_stack بعد كل إرسال ناجح،
+ * ويظهر صف "↩️ رجوع" أولاً كلما كان stack غير فارغ (أي: لسنا في الجذر).
  */
-async function sendCategoriesList(customer, parentDbId = null) {
+async function sendCategoriesList(customer, stack = []) {
+  const parentDbId = stack.length ? stack[stack.length - 1] : null;
   const activeCategories = categoriesRepository.findActiveChildrenOf(parentDbId); // <-- القراءة المباشرة من قاعدة البيانات
 
   // "خدمة العملاء" تظهر فقط في القائمة الرئيسية (المستوى الأول)، كآخر خيار دائماً
@@ -104,47 +127,52 @@ async function sendCategoriesList(customer, parentDbId = null) {
   const csEnabled = Boolean(csSettings && csSettings.enabled === 1);
 
   if (activeCategories.length === 0 && !csEnabled) {
-    await sendServicesList(customer, parentDbId); // لا أقسام هنا (ولا خدمة عملاء مفعّلة) — تراجع لعرض الخدمات مباشرة
+    await sendServicesList(customer, stack); // لا أقسام هنا (ولا خدمة عملاء مفعّلة) — تراجع لعرض الخدمات في نفس الموضع
     return;
   }
 
-  const sections = buildCategoryListSections(activeCategories, csEnabled ? csSettings.label : null);
+  const includeBack = stack.length > 0; // لا رجوع في الجذر أبداً
+  const sections = buildCategoryListSections(activeCategories, csEnabled ? csSettings.label : null, includeBack);
   const result = await whatsappService.sendInteractiveListMessage(customer.phone_number, {
-    bodyText: 'اختر القسم المناسب:',
-    buttonText: 'عرض الأقسام',
+    bodyText: botTexts.getText('categoryPrompt'),
+    buttonText: botTexts.getText('categoryListButton'),
     sections,
   });
   await sendOutbound(customer, '[قائمة الأقسام التفاعلية]', result);
   customersRepository.updateState(customer.id, 'CATEGORY_LIST');
+  customersRepository.updateNavigationStack(customer.id, stack);
 }
 
 /**
- * المستوى الثاني: يعرض خدمات قسم واحد (categoryDbId = categories.id الرقمي)،
- * أو كل الخدمات النشطة إن مُرِّر null (حالة التراجع أعلاه، أو نظام بلا أقسام أصلاً).
+ * المستوى الأخير: يعرض خدمات قسم واحد (آخر عنصر في stack)، أو كل الخدمات
+ * النشطة إن كان stack فارغاً (حالة التراجع في sendCategoriesList، أو نظام
+ * بلا أقسام أصلاً — وفي هذه الحالة تحديداً لا يوجد "رجوع" لأنها تعادل الجذر).
  */
-async function sendServicesList(customer, categoryDbId) {
+async function sendServicesList(customer, stack = []) {
+  const categoryDbId = stack.length ? stack[stack.length - 1] : null;
   const activeServices = categoryDbId
     ? servicesRepository.findActiveByCategoryId(categoryDbId)
     : servicesRepository.findActive();
 
   if (activeServices.length === 0) {
-    const text = categoryDbId
-      ? 'لا توجد خدمات متاحة في هذا القسم حالياً.'
-      : 'لا توجد خدمات متاحة حالياً، يرجى المحاولة لاحقاً.';
+    const text = categoryDbId ? botTexts.getText('noServicesInCategory') : botTexts.getText('noServicesAtAll');
     const result = await whatsappService.sendTextMessage(customer.phone_number, text);
     await sendOutbound(customer, text, result);
     customersRepository.updateState(customer.id, 'MAIN_MENU');
+    customersRepository.updateNavigationStack(customer.id, []); // هذه رسالة نصية بلا تفاعل، فلا حاجة لحفظ موضع للرجوع إليه
     return;
   }
 
-  const sections = buildServiceListSections(activeServices);
+  const includeBack = stack.length > 0;
+  const sections = buildServiceListSections(activeServices, includeBack);
   const result = await whatsappService.sendInteractiveListMessage(customer.phone_number, {
-    bodyText: 'اختر إحدى الخدمات التالية:',
-    buttonText: 'عرض الخدمات',
+    bodyText: botTexts.getText('servicePrompt'),
+    buttonText: botTexts.getText('serviceListButton'),
     sections,
   });
   await sendOutbound(customer, '[قائمة الخدمات التفاعلية]', result);
   customersRepository.updateState(customer.id, 'SERVICE_LIST');
+  customersRepository.updateNavigationStack(customer.id, stack);
 }
 
 const DEFAULT_WELCOME_TEXT = 'مرحباً بك 👋';
@@ -170,53 +198,138 @@ function getPublicBaseUrl() {
  * لرسائل الأزرار)، لذلك تُرسَل الصورة (إن وُجدت) كرسالة صورة عادية أولاً
  * ثم تلحقها رسالة القائمة مباشرة في نفس اللحظة — لا ضغطة زر مطلوبة إطلاقاً.
  */
+/**
+ * يعيد Media ID جاهزاً لصورة الترحيب (المرحلة 2) — من الكاش المحفوظ إن
+ * وُجد، وإلا يرفع الملف المحفوظ محلياً الآن (مرة واحدة فقط) ويخزّن الناتج
+ * في bot_settings ليُعاد استخدامه في كل رسالة ترحيب تالية بلا رفع مكرَّر.
+ * يعيد null إن لم تُضبط صورة، أو كانت من اسم قديم قبل هذه المرحلة (سيتراجع
+ * sendWelcomeMessage تلقائياً للطريقة الأصلية بالرابط العام لتلك الحالة)،
+ * أو تعذّر الرفع الآن (واتساب غير مُعد مثلاً).
+ */
+async function getWelcomeImageMediaId(botSettings) {
+  if (!botSettings?.welcome_image_filename) return null;
+  if (botSettings.welcome_image_media_id) return botSettings.welcome_image_media_id;
+
+  const filePath = mediaService.resolveAttachmentPath(botSettings.welcome_image_filename);
+  if (!filePath) return null;
+
+  const mimeType = botSettings.welcome_image_filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+  const uploadResult = await whatsappService.uploadMedia(filePath, mimeType);
+  if (!uploadResult.success) return null;
+
+  botSettingsRepository.save({
+    welcome_message: botSettings.welcome_message,
+    welcome_image_filename: botSettings.welcome_image_filename,
+    welcome_image_media_id: uploadResult.mediaId,
+    public_base_url: botSettings.public_base_url,
+  });
+  return uploadResult.mediaId;
+}
+
 async function sendWelcomeMessage(customer) {
   const botSettings = botSettingsRepository.get();
   const messageText = botSettings?.welcome_message || DEFAULT_WELCOME_TEXT;
 
   let result;
-  if (botSettings?.welcome_image_filename) {
-    const imageUrl = `${getPublicBaseUrl()}/uploads/${botSettings.welcome_image_filename}`;
-    result = await whatsappService.sendImageMessage(customer.phone_number, imageUrl, messageText);
+  const mediaId = await getWelcomeImageMediaId(botSettings);
 
-    if (!result.success) {
-      // فشل إرسال الصورة (رابط غير صالح، أو الملف غير موجود فعلياً على القرص
-      // — شائع بعد إعادة نشر على منصة بنظام ملفات مؤقت مثل Railway بلا
-      // Volume دائم، راجع README). لا نترك العميل بلا أي رد: نُعيد المحاولة
-      // كنص عادي فوراً بدل ترك الترحيب يختفي بصمت والانتقال مباشرة للقائمة.
-      console.error(
-        `[conversationService] فشل إرسال صورة الترحيب (${imageUrl})، إعادة المحاولة كنص:`,
-        result.error
-      );
-      result = await whatsappService.sendTextMessage(customer.phone_number, messageText);
+  if (mediaId) {
+    // الطريقة المفضّلة (المرحلة 2): بـ Media ID مباشرة — تعمل محلياً بلا حاجة
+    // لنطاق علني أو نفق مثل ngrok، على عكس الطريقة القديمة بالرابط العام
+    result = await whatsappService.sendMediaMessage(customer.phone_number, {
+      type: 'image',
+      mediaId,
+      caption: messageText,
+    });
+  } else if (botSettings?.welcome_image_filename) {
+    // تراجع: اسم صورة قديم قبل المرحلة 2 (لا يمكن رفعه هنا لأنه ليس داخل
+    // مجلد attachments/ الآمن)، أو تعذّر رفعه الآن لأي سبب آخر
+    const imageUrl = `${getPublicBaseUrl()}/uploads/${mediaService.publicPathFor(botSettings.welcome_image_filename)}`;
+    result = await whatsappService.sendImageMessage(customer.phone_number, imageUrl, messageText);
+  }
+
+  if (!result || !result.success) {
+    // فشل إرسال الصورة (بأي من الطريقتين)، أو لا صورة أصلاً. لا نترك العميل
+    // بلا أي رد: نُعيد المحاولة كنص عادي فوراً بدل ترك الترحيب يختفي بصمت
+    if (result) {
+      console.error('[conversationService] فشل إرسال صورة الترحيب، إعادة المحاولة كنص:', result.error);
     }
-  } else {
     result = await whatsappService.sendTextMessage(customer.phone_number, messageText);
   }
+
   await sendOutbound(customer, messageText, result);
 
   // مباشرة، بلا انتظار أي ضغطة: أرسل قائمة الأقسام (أو الخدمات إن لم توجد أقسام بعد)
-  await sendCategoriesList(customer);
+  // من الجذر دائماً (stack فارغ) — هذه بداية محادثة جديدة
+  await sendCategoriesList(customer, []);
 }
 
-async function handleCategorySelection(customer, selectedCategoryId) {
+/** currentStack: مسار الموضع الحالي (قبل هذا الاختيار) — انظر توثيق sendCategoriesList. */
+async function handleCategorySelection(customer, selectedCategoryId, currentStack) {
   // لا يُعتمد على اسم القسم القادم من العميل إطلاقاً — البحث دائماً بالـ category_id
   const category = categoriesRepository.findByCategoryId(selectedCategoryId);
 
   if (!category || category.status !== 'active') {
-    const text = 'عذراً، هذا القسم لم يعد متاحاً. اكتب "الخدمات" لعرض القائمة المحدّثة.';
+    const text = botTexts.getText('categoryUnavailable');
     const result = await whatsappService.sendTextMessage(customer.phone_number, text);
     await sendOutbound(customer, text, result);
     customersRepository.updateState(customer.id, 'MAIN_MENU');
+    customersRepository.updateNavigationStack(customer.id, []);
     return;
   }
 
+  const newStack = [...currentStack, category.id];
+
   // له أبناء نشطون؟ انزل مستوى إضافياً بدل عرض الخدمات مباشرة — هذا ما يجعل
-  // التداخل بلا حد للعمق: نفس الدالتين تتكرران بمعرّف القسم المُختار كأب جديد
+  // التداخل بلا حد للعمق: نفس الدالتين تتكرران بـ stack أطول بعنصر واحد
   if (categoriesRepository.hasActiveChildren(category.id)) {
-    await sendCategoriesList(customer, category.id);
+    await sendCategoriesList(customer, newStack);
   } else {
-    await sendServicesList(customer, category.id);
+    await sendServicesList(customer, newStack);
+  }
+}
+
+/** يقرأ customers.navigation_stack (JSON نصي) بأمان — [] افتراضياً لأي قيمة مفقودة أو تالفة. */
+function parseNavigationStack(customer) {
+  if (!customer.navigation_stack) return [];
+  try {
+    const parsed = JSON.parse(customer.navigation_stack);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * المرحلة 1 — العميل ضغط "↩️ رجوع": يُزال آخر عنصر من stack (pop)، ثم تُعاد
+ * قائمة الموضع الجديد (أقسام أو خدمات، حسب ما إذا كان لآخر عنصر متبقٍّ أبناء
+ * نشطون أم لا — نفس فحص handleCategorySelection تماماً). لا يُنشئ أي رسالة
+ * "ترحيب" جديدة ولا يُعيد تشغيل المحادثة — فقط يعرض المستوى السابق مباشرة،
+ * ويحافظ على كل سياق العميل الآخر (حالته الأخرى، بياناته، إلخ) كما هو.
+ */
+async function handleBackNavigation(customer) {
+  const stack = parseNavigationStack(customer);
+
+  // احتياط أمان: زر الرجوع لا يظهر أصلاً إن كان stack فارغاً (الجذر)، لكن لو
+  // وصل الطلب هنا لأي سبب غير متوقع (مثال: ضغطة على رسالة قديمة)، لا نكسر
+  // المحادثة — نعرض الجذر بدل توليد خطأ.
+  if (stack.length === 0) {
+    await sendCategoriesList(customer, []);
+    return;
+  }
+
+  const newStack = stack.slice(0, -1);
+
+  if (newStack.length === 0) {
+    await sendCategoriesList(customer, []);
+    return;
+  }
+
+  const parentId = newStack[newStack.length - 1];
+  if (categoriesRepository.hasActiveChildren(parentId)) {
+    await sendCategoriesList(customer, newStack);
+  } else {
+    await sendServicesList(customer, newStack);
   }
 }
 
@@ -226,7 +339,7 @@ async function handleCategorySelection(customer, selectedCategoryId) {
  * الوكلاء محادثته من صفحتهم فيُسنَد له تلقائياً — البوت لا يتدخل بعدها.
  */
 async function handleCustomerServiceRequest(customer) {
-  const text = 'تم استلام طلبك، سيتواصل معك أحد ممثلي خدمة العملاء في أقرب وقت. 🙏';
+  const text = botTexts.getText('customerServiceRequested');
   const result = await whatsappService.sendTextMessage(customer.phone_number, text);
   await sendOutbound(customer, text, result);
   customersRepository.updateState(customer.id, 'CUSTOMER_SERVICE_WAITING');
@@ -239,10 +352,10 @@ async function handleCustomerServiceRequest(customer) {
  * فالقائمة أنسب لـ 5 خيارات).
  */
 async function endCustomerServiceConversation(customer) {
-  const bodyText = 'كيف تقيّم تجربتك مع خدمة العملاء؟';
+  const bodyText = botTexts.getText('ratingPrompt');
   const sections = [
     {
-      title: 'التقييم',
+      title: botTexts.getText('ratingSectionTitle'),
       rows: [5, 4, 3, 2, 1].map((n) => ({
         id: `rating_${n}`,
         title: '⭐'.repeat(n),
@@ -252,7 +365,7 @@ async function endCustomerServiceConversation(customer) {
   ];
   const result = await whatsappService.sendInteractiveListMessage(customer.phone_number, {
     bodyText,
-    buttonText: 'اختر تقييمك',
+    buttonText: botTexts.getText('ratingButton'),
     sections,
   });
   await sendOutbound(customer, bodyText, result);
@@ -268,7 +381,7 @@ async function handleRatingReply(customer, selectedRatingId) {
     adminsRepository.addRating(customer.assigned_agent_id, stars);
   }
 
-  const text = 'شكراً لتقييمك! 🙏';
+  const text = botTexts.getText('ratingThanks');
   const result = await whatsappService.sendTextMessage(customer.phone_number, text);
   await sendOutbound(customer, text, result);
 
@@ -289,9 +402,6 @@ const INPUT_FORMAT_LABELS = {
   LETTERS: 'حروف فقط',
 };
 
-const DEFAULT_VALIDATION_ERROR = 'عذراً، الصيغة التي أرسلتها غير صحيحة. يرجى المحاولة مرة أخرى.';
-const DEFAULT_EXTERNAL_ERROR = 'تعذّر معالجة طلبك حالياً، حاول مرة أخرى لاحقاً.';
-
 /**
  * نهاية أي محادثة تمر من هنا بدل تعيين COMPLETED مباشرة: إن لم يُسأل العميل
  * من قبل عن الموافقة على الإشعارات (notifications_opt_in='pending')، يُسأل
@@ -308,10 +418,10 @@ async function completeConversation(customer) {
 }
 
 async function askNotificationOptIn(customer) {
-  const bodyText = 'هل ترغب في تلقي إشعارات وعروض منا مستقبلاً على واتساب؟';
+  const bodyText = botTexts.getText('notificationOptInAsk');
   const result = await whatsappService.sendButtonMessage(customer.phone_number, bodyText, [
-    { id: 'notif_yes', title: 'نعم، أوافق' },
-    { id: 'notif_no', title: 'لا، شكراً' },
+    { id: 'notif_yes', title: botTexts.getText('notificationOptInYes') },
+    { id: 'notif_no', title: botTexts.getText('notificationOptInNo') },
   ]);
   await sendOutbound(customer, bodyText, result);
   customersRepository.updateState(customer.id, 'AWAITING_NOTIFICATION_OPT_IN');
@@ -320,7 +430,7 @@ async function askNotificationOptIn(customer) {
 async function handleNotificationOptInReply(customer, buttonId) {
   if (buttonId === 'notif_yes') {
     customersRepository.updateNotificationOptIn(customer.id, 'opted_in');
-    const text = 'شكراً لك! سنبقيك على اطّلاع بآخر العروض والتحديثات. 🎉';
+    const text = botTexts.getText('notificationOptInThanks');
     const result = await whatsappService.sendTextMessage(customer.phone_number, text);
     await sendOutbound(customer, text, result);
   } else {
@@ -331,7 +441,7 @@ async function handleNotificationOptInReply(customer, buttonId) {
 
 /** يبني رسالة الطلب من العميل، مع ذكر البادئة/الصيغة المطلوبة إن وُجدت حتى لا يخمّن العميل. */
 function buildInputPrompt(service) {
-  let text = 'يرجى إرسال التفاصيل اللازمة لإتمام طلب هذه الخدمة في رسالة واحدة.';
+  let text = botTexts.getText('inputPrompt');
   const hints = [];
   if (service.input_prefix) hints.push(`يجب أن يبدأ بـ "${service.input_prefix}"`);
   if (service.input_format && INPUT_FORMAT_LABELS[service.input_format]) {
@@ -395,7 +505,7 @@ async function handleServiceSelection(customer, selectedServiceId) {
   const service = servicesRepository.findByServiceId(selectedServiceId);
 
   if (!service || service.status !== 'active') {
-    const text = 'عذراً، هذه الخدمة لم تعد متاحة. اكتب "الخدمات" لعرض القائمة المحدّثة.';
+    const text = botTexts.getText('serviceUnavailable');
     const result = await whatsappService.sendTextMessage(customer.phone_number, text);
     await sendOutbound(customer, text, result);
     customersRepository.updateState(customer.id, 'MAIN_MENU');
@@ -407,7 +517,7 @@ async function handleServiceSelection(customer, selectedServiceId) {
   if (service.reply_type === 'INFO') {
     // استعلام عن معلومة معروفة: description هو نص الرد نفسه فقط — بلا اسم
     // الخدمة مكرَّراً معه (العميل رآه للتو في القائمة عند الاختيار)
-    const text = (service.description || '').trim() || 'لا تتوفر تفاصيل إضافية لهذه الخدمة حالياً.';
+    const text = (service.description || '').trim() || botTexts.getText('infoNoDetails');
     const result = await whatsappService.sendTextMessage(customer.phone_number, text);
     await sendOutbound(customer, text, result);
     await completeConversation(customer);
@@ -436,7 +546,7 @@ async function handleAwaitedData(customer, freeText) {
 
   if (!service) {
     // احتياط أمان: لو فُقد سياق الخدمة لأي سبب غير متوقع، لا نكسر المحادثة
-    const text = 'شكراً لك، تم استلام رسالتك.';
+    const text = botTexts.getText('fallbackReceived');
     const result = await whatsappService.sendTextMessage(customer.phone_number, text);
     await sendOutbound(customer, text, result);
     await completeConversation(customer);
@@ -446,7 +556,7 @@ async function handleAwaitedData(customer, freeText) {
   const validation = validateCustomerInput(freeText, service);
 
   if (!validation.valid) {
-    const errorText = service.validation_error_message || DEFAULT_VALIDATION_ERROR;
+    const errorText = service.validation_error_message || botTexts.getText('defaultValidationError');
     const result = await whatsappService.sendTextMessage(customer.phone_number, errorText);
     await sendOutbound(customer, errorText, result);
     // نبقى عمداً في WAITING_FOR_DATA — نمنح العميل فرصة تصحيح إدخاله بدل إجباره على البدء من جديد
@@ -456,9 +566,11 @@ async function handleAwaitedData(customer, freeText) {
   let replyText;
   if (service.external_api_url) {
     const apiResult = await callExternalService(service, customer, validation.value);
-    replyText = apiResult.success ? apiResult.message : service.validation_error_message || DEFAULT_EXTERNAL_ERROR;
+    replyText = apiResult.success
+      ? apiResult.message
+      : service.validation_error_message || botTexts.getText('defaultExternalServiceError');
   } else {
-    replyText = 'شكراً لك، تم استلام طلبك بنجاح وسنتواصل معك قريباً بخصوصه.';
+    replyText = botTexts.getText('genericCollectInputThanks');
   }
 
   const result = await whatsappService.sendTextMessage(customer.phone_number, replyText);
@@ -491,12 +603,21 @@ async function handleMessage(customer, { text, selectedId }) {
   }
 
   if (selectedId) {
+    // المرحلة 1: "رجوع" يعمل من كلا مستويي القائمة (أقسام أو خدمات) بنفس المعالج —
+    // هذا الفحص يجب أن يسبق فحص خدمة العملاء/الأقسام/الخدمات أدناه تحديداً
+    if (
+      selectedId === BACK_RESERVED_ID &&
+      (customer.conversation_state === 'CATEGORY_LIST' || customer.conversation_state === 'SERVICE_LIST')
+    ) {
+      await handleBackNavigation(customer);
+      return;
+    }
     if (selectedId === CUSTOMER_SERVICE_RESERVED_ID && customer.conversation_state === 'CATEGORY_LIST') {
       await handleCustomerServiceRequest(customer);
       return;
     }
     if (customer.conversation_state === 'CATEGORY_LIST') {
-      await handleCategorySelection(customer, selectedId);
+      await handleCategorySelection(customer, selectedId, parseNavigationStack(customer));
       return;
     }
     if (customer.conversation_state === 'SERVICE_LIST') {
@@ -504,8 +625,8 @@ async function handleMessage(customer, { text, selectedId }) {
       return;
     }
     // رد قائمة وصل في حالة غير متوقعة (مثال: قائمة قديمة من محادثة سابقة) —
-    // إعادة تشغيل التدفق من البداية بأمان بدل تجاهل رسالة العميل
-    await sendCategoriesList(customer);
+    // إعادة تشغيل التدفق من البداية بأمان بدل تجاهل رسالة العميل (من الجذر دائماً)
+    await sendCategoriesList(customer, []);
     return;
   }
 
@@ -528,7 +649,7 @@ async function handleMessage(customer, { text, selectedId }) {
   );
 
   if (isServicesTrigger) {
-    await sendCategoriesList(customer);
+    await sendCategoriesList(customer, []);
     return;
   }
 
@@ -542,4 +663,5 @@ module.exports = {
   buildServiceListSections,
   endCustomerServiceConversation,
   CUSTOMER_SERVICE_RESERVED_ID,
+  BACK_RESERVED_ID,
 };

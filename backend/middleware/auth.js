@@ -3,6 +3,7 @@
 // ويسمح بالمرور فقط إذا كان صالحاً — تماماً كما هو محدد في المواصفات.
 
 const jwt = require('jsonwebtoken');
+const systemSettingsRepository = require('../database/repositories/systemSettingsRepository');
 const { AppError, ErrorCodes } = require('../utils/errors');
 
 function authenticateToken(req, res, next) {
@@ -13,7 +14,7 @@ function authenticateToken(req, res, next) {
     return next(new AppError(ErrorCodes.UNAUTHORIZED, 'رمز الدخول مفقود', 401));
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+  jwt.verify(token, systemSettingsRepository.getJwtSecret(), (err, decoded) => {
     if (err) {
       // نفس رمز الخطأ لكل من: توكن غير صالح، أو منتهي الصلاحية (jwt.TokenExpiredError)
       return next(

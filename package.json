@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
-    "seed:admin": "node backend/database/seed.js"
+    "seed:admin": "node backend/database/seed.js",
+    "reset-password": "node backend/database/reset-password.js"
   },
   "engines": {
     "node": ">=22.13.0"

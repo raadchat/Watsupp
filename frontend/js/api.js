@@ -101,7 +101,15 @@ const api = {
   },
   getCustomer: (id) => apiRequest(`/customers/${id}`),
   getCustomerMessages: (id) => apiRequest(`/customers/${id}/messages`),
-  sendCustomerMessage: (id, message) => apiRequest(`/customers/${id}/messages`, { method: 'POST', body: { message } }),
+  sendCustomerMessage: (id, { message, file } = {}) => {
+    if (file) {
+      const formData = new FormData();
+      formData.append('message', message || '');
+      formData.append('attachment', file);
+      return apiRequest(`/customers/${id}/messages`, { method: 'POST', body: formData, isFormData: true });
+    }
+    return apiRequest(`/customers/${id}/messages`, { method: 'POST', body: { message } });
+  },
 
   sendBulkMessages: (formData) => apiRequest('/messages/bulk', { method: 'POST', body: formData, isFormData: true }),
   getMessagesStatus: () => apiRequest('/messages/status'),
@@ -114,6 +122,9 @@ const api = {
   getBotSettings: () => apiRequest('/bot-settings/welcome'),
   saveBotSettings: (formData) => apiRequest('/bot-settings/welcome', { method: 'PUT', body: formData, isFormData: true }),
 
+  getBotTexts: () => apiRequest('/bot-texts'),
+  saveBotTexts: (texts) => apiRequest('/bot-texts', { method: 'PUT', body: { texts } }),
+
   getCustomerServiceSettings: () => apiRequest('/customer-service/settings'),
   saveCustomerServiceSettings: (settings) => apiRequest('/customer-service/settings', { method: 'PUT', body: settings }),
   getCustomerServiceQueue: () => apiRequest('/customer-service/queue'),
@@ -121,6 +132,9 @@ const api = {
   claimConversation: (customerId) => apiRequest(`/customer-service/${customerId}/claim`, { method: 'POST' }),
   endConversation: (customerId) => apiRequest(`/customer-service/${customerId}/end`, { method: 'POST' }),
 
-  getAgents: () => apiRequest('/users'),
-  createAgent: (agent) => apiRequest('/users', { method: 'POST', body: agent }),
+  getAllUsers: () => apiRequest('/users'),
+  createUser: (user) => apiRequest('/users', { method: 'POST', body: user }),
+  updateUser: (id, updates) => apiRequest(`/users/${id}`, { method: 'PUT', body: updates }),
+  deleteUser: (id) => apiRequest(`/users/${id}`, { method: 'DELETE' }),
+  changeUserPassword: (id, password) => apiRequest(`/users/${id}/password`, { method: 'PUT', body: { password } }),
 };

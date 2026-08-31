@@ -76,6 +76,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('chat-reply-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleSendReply();
   });
+  document.getElementById('chat-reply-attach-btn').addEventListener('click', () => {
+    document.getElementById('chat-reply-file').click();
+  });
+  document.getElementById('chat-reply-file').addEventListener('change', (e) => {
+    const label = document.getElementById('chat-reply-file-name');
+    const file = e.target.files[0];
+    label.style.display = file ? 'block' : 'none';
+    label.textContent = file ? `📎 ${file.name}` : '';
+  });
 
   refreshAll();
   pollTimer = setInterval(refreshAll, 5000); // تحديث دوري: طابور جديد، أو رد عميل وصل أثناء محادثة مفتوحة
@@ -196,15 +205,21 @@ function renderChatThread(messages) {
     return;
   }
 
+  const attachmentLabels = { image: '🖼️ صورة', video: '🎥 فيديو', document: '📄 مستند' };
+
   threadEl.innerHTML = messages
     .map((m) => {
       const isInbound = m.direction === 'inbound';
       const align = isInbound ? 'flex-start' : 'flex-end';
       const bg = isInbound ? 'var(--bg)' : 'var(--accent-soft)';
       const label = isInbound ? 'العميل' : m.sent_by ? 'أنت' : 'البوت';
+      const attachmentLine = m.attachment_type
+        ? `<div style="font-size:12px; margin-bottom:4px;">${attachmentLabels[m.attachment_type] || '📎 مرفق'}</div>`
+        : '';
       return `
         <div style="align-self:${align}; max-width:80%; background:${bg}; padding:8px 12px; border-radius:12px;">
           <div style="font-size:11px; color:var(--muted); margin-bottom:3px;">${escapeHtml(label)} · ${formatDate(m.created_at)}</div>
+          ${attachmentLine}
           <div style="font-size:13.5px; white-space:pre-wrap;">${escapeHtml(m.message || '')}</div>
         </div>
       `;
@@ -222,14 +237,19 @@ function closeChatPanel() {
 
 async function handleSendReply() {
   const input = document.getElementById('chat-reply-input');
+  const fileInput = document.getElementById('chat-reply-file');
   const text = input.value.trim();
-  if (!text || !openCustomerId) return;
+  const file = fileInput.files[0] || null;
+  if (!text && !file) return;
+  if (!openCustomerId) return;
 
   const btn = document.getElementById('chat-reply-btn');
   setBtnLoading(btn, true);
   try {
-    await api.sendCustomerMessage(openCustomerId, text);
+    await api.sendCustomerMessage(openCustomerId, { message: text, file });
     input.value = '';
+    fileInput.value = '';
+    document.getElementById('chat-reply-file-name').style.display = 'none';
     await refreshChatThread();
   } catch (err) {
     showToast(err.message, 'error');

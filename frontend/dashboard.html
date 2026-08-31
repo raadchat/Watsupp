@@ -34,6 +34,9 @@
         <button class="nav-item" data-section="bot-settings">
           <span>💬 إعدادات البوت</span>
         </button>
+        <button class="nav-item" data-section="bot-texts">
+          <span>📝 النصوص والأزرار</span>
+        </button>
         <button class="nav-item" data-section="users">
           <span>🧑‍💼 المستخدمون</span>
         </button>
@@ -341,6 +344,24 @@
           </div>
         </section>
 
+        <!-- ============== قسم النصوص والأزرار (المرحلة 4) ============== -->
+        <section id="section-bot-texts" class="section">
+          <div class="section-header">
+            <div>
+              <h2>النصوص والأزرار</h2>
+              <p class="subtitle">كل نص/زر ثابت يظهر للعميل على واتساب (غير رسالة الترحيب، التي تُعدَّل من "إعدادات البوت"). اترك أي حقل فارغاً ليعود لنصه الافتراضي تلقائياً. النصوص بين قوسين مثل <span class="mono">{agentName}</span> تُستبدَل بقيمتها الفعلية عند الإرسال، ولا تُحذف.</p>
+            </div>
+          </div>
+
+          <div class="card card-pad">
+            <div id="bot-texts-list">جارٍ التحميل...</div>
+            <button type="button" id="bot-texts-save-btn" class="btn btn-primary" style="margin-top:16px;">
+              <span class="spinner"></span>
+              <span class="btn-label">حفظ كل النصوص</span>
+            </button>
+          </div>
+        </section>
+
         <!-- ============== قسم الاتصال بواتساب ============== -->
         <section id="section-settings" class="section">
           <div class="section-header">
@@ -417,7 +438,7 @@
           <div class="section-header">
             <div>
               <h2>المستخدمون</h2>
-              <p class="subtitle">وكلاء خدمة العملاء — يسجّلون الدخول من نفس صفحة الدخول، وتظهر لهم صفحة محادثات مبسّطة بدل اللوحة الكاملة.</p>
+              <p class="subtitle">مدراء (صلاحيات كاملة) ووكلاء خدمة عملاء (واجهة مبسّطة، خدمة العملاء فقط) — الصلاحيات مطبَّقة في الخادم نفسه، وليس فقط بإخفاء الأزرار هنا.</p>
             </div>
             <button class="btn btn-primary" id="add-agent-btn">+ إضافة مستخدم</button>
           </div>
@@ -429,8 +450,10 @@
                   <tr>
                     <th>الاسم</th>
                     <th>اسم المستخدم</th>
+                    <th>النوع</th>
                     <th>التقييم</th>
                     <th>تاريخ الإضافة</th>
+                    <th>إجراءات</th>
                   </tr>
                 </thead>
                 <tbody id="agents-tbody"></tbody>
@@ -606,11 +629,11 @@
     </div>
   </div>
 
-  <!-- ============== Modal: إضافة مستخدم (وكيل خدمة عملاء) ============== -->
+  <!-- ============== Modal: إضافة/تعديل مستخدم ============== -->
   <div id="agent-modal-overlay" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-header">
-        <h3>إضافة مستخدم</h3>
+        <h3 id="agent-modal-title">إضافة مستخدم</h3>
         <button class="modal-close" id="agent-modal-close">×</button>
       </div>
       <form id="agent-form">
@@ -619,13 +642,21 @@
             <label for="agent-name">الاسم</label>
             <input type="text" id="agent-name" required />
           </div>
-          <div class="field">
+          <div class="field" id="agent-username-field">
             <label for="agent-username">اسم المستخدم (للدخول)</label>
             <input type="text" id="agent-username" required />
+            <p class="hint" id="agent-username-hint" style="display:none;">لا يمكن تغيير اسم المستخدم بعد الإنشاء.</p>
           </div>
           <div class="field">
+            <label for="agent-role">نوع الحساب</label>
+            <select id="agent-role">
+              <option value="agent">وكيل (خدمة العملاء فقط)</option>
+              <option value="admin">مدير (صلاحيات كاملة)</option>
+            </select>
+          </div>
+          <div class="field" id="agent-password-field">
             <label for="agent-password">كلمة المرور</label>
-            <input type="password" id="agent-password" required minlength="6" />
+            <input type="password" id="agent-password" minlength="6" />
             <p class="hint">6 أحرف على الأقل.</p>
           </div>
         </div>
@@ -635,6 +666,32 @@
             <span class="btn-label">حفظ</span>
           </button>
           <button type="button" class="btn btn-secondary" id="agent-cancel-btn">إلغاء</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== Modal: تغيير كلمة مرور مستخدم ============== -->
+  <div id="password-modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="password-modal-title">تغيير كلمة المرور</h3>
+        <button class="modal-close" id="password-modal-close">×</button>
+      </div>
+      <form id="password-form">
+        <div class="modal-body">
+          <div class="field">
+            <label for="password-new">كلمة المرور الجديدة</label>
+            <input type="password" id="password-new" required minlength="6" />
+            <p class="hint">6 أحرف على الأقل. لن تظهر لأحد بعد الحفظ.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="password-save-btn">
+            <span class="spinner"></span>
+            <span class="btn-label">حفظ</span>
+          </button>
+          <button type="button" class="btn btn-secondary" id="password-cancel-btn">إلغاء</button>
         </div>
       </form>
     </div>
@@ -652,9 +709,12 @@
       </div>
       <div class="modal-footer" style="flex-direction: column; align-items: stretch;">
         <div class="toolbar">
+          <input type="file" id="conversation-reply-file" accept="image/jpeg,image/png,video/mp4,application/pdf" style="display:none;" />
+          <button type="button" class="btn btn-secondary" id="conversation-reply-attach-btn" title="إرفاق صورة/فيديو/PDF">📎</button>
           <input type="text" id="conversation-reply-input" placeholder="اكتب رداً..." style="flex:1;" />
           <button type="button" class="btn btn-primary" id="conversation-reply-btn">إرسال</button>
         </div>
+        <div id="conversation-reply-file-name" class="subtitle" style="display:none; margin-top:6px;"></div>
       </div>
     </div>
   </div>

@@ -8,6 +8,12 @@ const categoriesRepository = require('../database/repositories/categoriesReposit
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
+// نفس معرّف "↩️ رجوع" المحجوز في conversationService.js (المرحلة 1) — مكرَّر هنا
+// كنص حرفي بنفس منطق RESERVED_CATEGORY_IDS في categoriesController.js، تفادياً
+// لدورة استيراد. service_id غير قابل للتعديل بعد الإنشاء أصلاً (servicesRepository.update
+// لا يكتبه)، لذا الفحص هنا في createService فقط يكفي.
+const RESERVED_SERVICE_IDS = ['BACK'];
+
 const getAllServices = asyncHandler(async (req, res) => {
   const services = servicesRepository.findAll();
   res.json({ success: true, data: services });
@@ -34,6 +40,10 @@ function extractServiceFields(body) {
 
 const createService = asyncHandler(async (req, res) => {
   const fields = extractServiceFields(req.body);
+
+  if (RESERVED_SERVICE_IDS.includes(fields.service_id)) {
+    throw new AppError(ErrorCodes.SERVICE_ID_EXISTS, 'هذا المعرّف محجوز لزر "رجوع" في قوائم واتساب، اختر معرّفاً آخر', 409);
+  }
 
   const existing = servicesRepository.findByServiceId(fields.service_id);
   if (existing) {

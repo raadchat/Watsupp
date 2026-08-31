@@ -3,7 +3,7 @@
 // { success: false, error: { code, message } }
 // ولا تُسرّب أبداً تفاصيل قاعدة البيانات أو الـ stack trace للمستخدم.
 
-const { AppError, ErrorCodes } = require('../utils/errors');
+const { AppError, ErrorCodes, logSafeError } = require('../utils/errors');
 
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
@@ -15,7 +15,7 @@ function errorHandler(err, req, res, next) {
   }
 
   // أخطاء غير متوقعة (استثناء برمجي، خطأ قاعدة بيانات، ...): تُسجَّل في السيرفر فقط
-  console.error('[unexpected error]', err);
+  logSafeError('[unexpected error]', err);
   return res.status(500).json({
     success: false,
     error: {

@@ -4,10 +4,10 @@ const categoriesRepository = require('../database/repositories/categoriesReposit
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
-// نفس المعرّف المحجوز في conversationService.js لخيار "خدمة العملاء" الثابت —
-// مكرَّر هنا كنص حرفي بدل استيراده لتفادي أي احتمال دورة استيراد لاحقاً؛
-// كلاهما يجب أن يبقيا متطابقين حرفياً إن تغيّر أحدهما مستقبلاً.
-const RESERVED_CATEGORY_IDS = ['__customer_service__'];
+// نفس المعرّفين المحجوزين في conversationService.js: خيار "خدمة العملاء" الثابت،
+// وزر "↩️ رجوع" (المرحلة 1) — مكرَّران هنا كنص حرفي بدل استيرادهما لتفادي أي
+// احتمال دورة استيراد لاحقاً؛ يجب أن يبقيا متطابقين حرفياً إن تغيّر أحدهما مستقبلاً.
+const RESERVED_CATEGORY_IDS = ['__customer_service__', 'BACK'];
 
 const getAllCategories = asyncHandler(async (req, res) => {
   const categories = categoriesRepository.findAll();

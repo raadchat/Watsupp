@@ -9,6 +9,7 @@ const customersRepository = require('../database/repositories/customersRepositor
 const messagesRepository = require('../database/repositories/messagesRepository');
 const whatsappService = require('../services/whatsappService');
 const conversationService = require('../services/conversationService');
+const botTexts = require('../services/botTexts');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -47,7 +48,7 @@ const claimConversation = asyncHandler(async (req, res) => {
   const updated = customersRepository.assignAgent(customer.id, req.admin.id, 'CUSTOMER_SERVICE_ACTIVE');
 
   const agentName = req.admin.name || req.admin.username;
-  const text = `تمت الموافقة على طلب مرسل خدمة العملاء، ${agentName} يتحدث معك الآن.`;
+  const text = botTexts.getText('customerServiceClaimed', { agentName });
   const result = await whatsappService.sendTextMessage(customer.phone_number, text);
   messagesRepository.create({
     customer_id: customer.id,

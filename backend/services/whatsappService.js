@@ -14,6 +14,8 @@
 // لأن المدير أصبح يستطيع حفظها/تغييرها من لوحة التحكم في أي وقت دون إعادة تشغيل.
 
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const whatsappSettingsRepository = require('../database/repositories/whatsappSettingsRepository');
 
 function extractMessageId(response) {
@@ -182,6 +184,83 @@ async function sendImageMessage(to, imageUrl, caption) {
  * @param {Array<{id: string, title: string}>} buttons - 3 كحد أقصى، العنوان 20 حرفاً كحد أقصى
  * @param {string|null} imageUrl - رابط صورة عام اختياري تُعرض كـ header فوق النص والأزرار
  */
+/**
+ * رفع ملف إلى مساحة وسائط واتساب (POST /PHONE_NUMBER_ID/media) والحصول على
+ * Media ID قابل لإعادة الاستخدام لعدة رسائل/عملاء (المرحلة 2 — النمط
+ * المفضَّل بدل رابط عام: يعمل محلياً بلا حاجة لنطاق علني أو نفق مثل ngrok).
+ * يستخدم fetch/FormData المدمجتين في Node (لا حزمة form-data إضافية).
+ * @param {string} filePath - مسار الملف الفعلي على القرص
+ * @param {string} mimeType
+ * @returns {Promise<{success: boolean, mediaId?: string, error?: string}>}
+ */
+async function uploadMedia(filePath, mimeType) {
+  const settings = whatsappSettingsRepository.get();
+  if (!settings?.phone_number_id || !settings?.access_token) {
+    console.error('[whatsappService] uploadMedia failed:', NOT_CONFIGURED_ERROR);
+    return { success: false, error: NOT_CONFIGURED_ERROR };
+  }
+
+  const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0';
+  try {
+    const fileBuffer = fs.readFileSync(filePath);
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('file', new Blob([fileBuffer], { type: mimeType }), path.basename(filePath));
+
+    const response = await fetch(`https://graph.facebook.com/${apiVersion}/${settings.phone_number_id}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${settings.access_token}` },
+      body: form,
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || !data.id) {
+      const error = data?.error?.message || `فشل رفع الملف إلى واتساب (HTTP ${response.status})`;
+      console.error('[whatsappService] uploadMedia failed:', error);
+      return { success: false, error };
+    }
+    return { success: true, mediaId: data.id };
+  } catch (err) {
+    console.error('[whatsappService] uploadMedia failed:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * إرسال صورة/فيديو/مستند عبر Media ID مرفوع مسبقاً بـ uploadMedia() —
+ * دالة مركزية واحدة (Generic Media Sender) بدل ثلاث دوال منفصلة، لأن الفرق
+ * الوحيد بين الأنواع الثلاثة هو اسم الحقل وإمكانية إضافة filename للمستند.
+ * @param {string} to
+ * @param {{type: 'image'|'video'|'document', mediaId: string, caption?: string, filename?: string}} attachment
+ * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
+ */
+async function sendMediaMessage(to, { type, mediaId, caption, filename }) {
+  const settings = whatsappSettingsRepository.get();
+  const client = settings && buildClient(settings.phone_number_id, settings.access_token);
+  if (!client) {
+    console.error('[whatsappService] sendMediaMessage failed:', NOT_CONFIGURED_ERROR);
+    return { success: false, error: NOT_CONFIGURED_ERROR };
+  }
+
+  const mediaPayload = { id: mediaId };
+  if (caption) mediaPayload.caption = caption;
+  if (type === 'document' && filename) mediaPayload.filename = filename;
+
+  try {
+    const response = await client.post('/messages', {
+      messaging_product: 'whatsapp',
+      to,
+      type,
+      [type]: mediaPayload,
+    });
+    return { success: true, messageId: extractMessageId(response) };
+  } catch (err) {
+    const error = extractApiError(err);
+    console.error('[whatsappService] sendMediaMessage failed:', error);
+    return { success: false, error };
+  }
+}
+
 async function sendButtonMessage(to, bodyText, buttons, imageUrl = null) {
   const settings = whatsappSettingsRepository.get();
   const client = settings && buildClient(settings.phone_number_id, settings.access_token);
@@ -224,5 +303,7 @@ module.exports = {
   sendInteractiveListMessage,
   sendImageMessage,
   sendButtonMessage,
+  uploadMedia,
+  sendMediaMessage,
   testConnection,
 };

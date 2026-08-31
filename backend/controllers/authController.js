@@ -6,6 +6,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const adminsRepository = require('../database/repositories/adminsRepository');
+const systemSettingsRepository = require('../database/repositories/systemSettingsRepository');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -27,7 +28,7 @@ const login = asyncHandler(async (req, res) => {
 
   const token = jwt.sign(
     { id: admin.id, username: admin.username, role: admin.role, name: admin.name },
-    process.env.JWT_SECRET,
+    systemSettingsRepository.getJwtSecret(),
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
 

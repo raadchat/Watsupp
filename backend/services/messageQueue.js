@@ -12,6 +12,7 @@
 
 const bulkJobsRepository = require('../database/repositories/bulkJobsRepository');
 const whatsappService = require('./whatsappService');
+const { logSafeError } = require('../utils/errors');
 
 const DELAY_MS = Number(process.env.BULK_MESSAGE_DELAY_MS) || 1200;
 
@@ -54,7 +55,7 @@ function enqueueBulkJob(jobId) {
 
   processJob(jobId)
     .catch((err) => {
-      console.error(`[messageQueue] job ${jobId} failed:`, err);
+      logSafeError(`[messageQueue] job ${jobId} failed:`, err);
       bulkJobsRepository.updateStatus(jobId, 'failed');
     })
     .finally(() => activeJobs.delete(jobId));

@@ -87,6 +87,9 @@ CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
 -- ملاحظة: notifications_opt_in (موافقة تلقي الإشعارات) و assigned_agent_id
 -- (وكيل خدمة العملاء المُعيَّن) يُضافان عبر ترقيات تلقائية في db.js، بنفس
 -- سبب كل ترقيات هذا الملف: CREATE TABLE IF NOT EXISTS لا تُعدّل جدولاً قائماً.
+-- ملاحظة (المرحلة 1 — الرجوع في قوائم واتساب): navigation_stack (مسار الأقسام
+-- من الجذر حتى الموضع الحالي، JSON نصي، مثال: "[12,25]") يُضاف أيضاً عبر
+-- ترقية تلقائية في db.js — راجع ensureNavigationStackMigration.
 
 -- ---------------------------------------------------------
 -- Messages: سجل كل رسالة واردة/صادرة مرتبطة بعميل
@@ -100,6 +103,10 @@ CREATE TABLE IF NOT EXISTS messages (
   whatsapp_message_id   TEXT,
   created_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- ملاحظة: sent_by (اسم من ردّ يدوياً) يُضاف عبر ترقية تلقائية في db.js.
+-- ملاحظة (المرحلة 2 — نظام المرفقات): attachment_type ('image'|'video'|
+-- 'document') وattachment_filename يُضافان أيضاً عبر ترقية تلقائية، لتسجيل
+-- أي مرفق ضمن رسالة صادرة — راجع ensureAttachmentColumnsMigration.
 
 CREATE INDEX IF NOT EXISTS idx_messages_customer ON messages(customer_id);
 -- ملاحظة: messages.sent_by (من أرسل رسالة صادرة: NULL = البوت تلقائياً، أو
@@ -164,6 +171,10 @@ CREATE TABLE IF NOT EXISTS bot_settings (
   welcome_image_filename  TEXT,
   updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- ملاحظة: public_base_url يُضاف عبر ترقية تلقائية في db.js.
+-- ملاحظة (المرحلة 2): welcome_image_media_id يُضاف أيضاً عبر ترقية تلقائية —
+-- Media ID مخزَّن بعد رفع صورة الترحيب مرة واحدة لواتساب، بدل الاعتماد فقط
+-- على رابط عام (public_base_url) يتطلب نطاقاً علنياً أو نفقاً محلياً.
 -- ملاحظة: bot_settings.public_base_url (الرابط العام للخادم، لازم لبناء رابط
 -- صورة الترحيب الذي يجلبه واتساب) يُضاف عبر ترقية تلقائية في db.js.
 
@@ -178,4 +189,23 @@ CREATE TABLE IF NOT EXISTS customer_service_settings (
   enabled    INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
   label      TEXT NOT NULL DEFAULT 'خدمة العملاء',
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- المرحلة 3 (إعدادات ENV الذكية): قيم بنيوية للنظام نفسه، وليست "سلوك بوت" —
+-- حالياً jwt_secret فقط. تُولَّد تلقائياً في db.js عند أول إقلاع إن لم توجد
+-- (AUTO_GENERATED) — لا تُعرض هذه القيمة أو تُسجَّل في أي مكان مطلقاً، ولا
+-- توجد لها أي صفحة إدخال في لوحة التحكم (المدير لا يحتاج التعامل معها إطلاقاً).
+CREATE TABLE IF NOT EXISTS system_settings (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  jwt_secret  TEXT
+);
+
+-- المرحلة 4 (النصوص والأزرار الثابتة): جدول مفتاح/قيمة — صف واحد فقط لكل
+-- نص تم تخصيصه من لوحة التحكم (الافتراضي مُعرَّف في الكود، في
+-- backend/services/botTexts.js، ويُستخدَم تلقائياً لأي مفتاح بلا صف هنا).
+-- المفاتيح والنصوص الافتراضية موثَّقة بالكامل في ذلك الملف، وليس هنا.
+CREATE TABLE IF NOT EXISTS bot_texts (
+  key         TEXT PRIMARY KEY,
+  value       TEXT NOT NULL,
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

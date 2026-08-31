@@ -19,6 +19,7 @@ const SECTION_TITLES = {
   customers: 'العملاء',
   bulk: 'الرسائل الجماعية',
   'bot-settings': 'إعدادات البوت',
+  'bot-texts': 'النصوص والأزرار',
   users: 'المستخدمون',
   settings: 'الاتصال بواتساب',
 };
@@ -143,6 +144,7 @@ function showSection(name) {
     loadBotSettings();
     loadCustomerServiceSettings();
   }
+  if (name === 'bot-texts') loadBotTexts();
   if (name === 'users') loadAgents();
 }
 
@@ -540,14 +542,18 @@ function openDeleteModal(type, data) {
   if (!data) return;
   itemToDelete = { type, data };
 
-  const label = type === 'category' ? 'القسم' : 'الخدمة';
-  const consequence =
-    type === 'category'
-      ? 'لن يظهر بعد الآن للعملاء على واتساب (ولن يمكن الحذف إن كانت خدمات لا تزال مرتبطة به)'
-      : 'لن تظهر بعد الآن للعملاء على واتساب';
+  const labels = { category: 'القسم', service: 'الخدمة', user: 'المستخدم' };
+  const label = labels[type] || 'العنصر';
+  const consequences = {
+    category: 'لن يظهر بعد الآن للعملاء على واتساب (ولن يمكن الحذف إن كانت خدمات لا تزال مرتبطة به)',
+    service: 'لن تظهر بعد الآن للعملاء على واتساب',
+    user: 'لن يستطيع تسجيل الدخول بعد الآن (لا يُحذف سجل المحادثات التي ردّ عليها سابقاً)',
+  };
+  const consequence = consequences[type] || '';
+  const itemName = data.name || data.username;
 
   document.getElementById('delete-modal-text').textContent =
-    `هل أنت متأكد من حذف ${label} "${data.name}"؟ ${consequence}، ولا يمكن التراجع عن هذا الإجراء.`;
+    `هل أنت متأكد من حذف ${label} "${itemName}"؟ ${consequence}، ولا يمكن التراجع عن هذا الإجراء.`;
   document.getElementById('delete-modal-overlay').classList.remove('hidden');
 }
 
@@ -568,6 +574,11 @@ async function handleDeleteConfirm() {
       showToast('تم حذف القسم');
       closeDeleteModal();
       loadCategories();
+    } else if (type === 'user') {
+      await api.deleteUser(data.id);
+      showToast('تم حذف المستخدم');
+      closeDeleteModal();
+      loadAgents();
     } else {
       await api.deleteService(data.id);
       showToast('تم حذف الخدمة');
@@ -686,6 +697,15 @@ function setupConversationModal() {
   document.getElementById('conversation-reply-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleConversationReply();
   });
+  document.getElementById('conversation-reply-attach-btn').addEventListener('click', () => {
+    document.getElementById('conversation-reply-file').click();
+  });
+  document.getElementById('conversation-reply-file').addEventListener('change', (e) => {
+    const label = document.getElementById('conversation-reply-file-name');
+    const file = e.target.files[0];
+    label.style.display = file ? 'block' : 'none';
+    label.textContent = file ? `📎 ${file.name}` : '';
+  });
 }
 
 async function openConversationModal(customerId) {
@@ -718,15 +738,21 @@ function renderConversationThread(messages) {
     return;
   }
 
+  const attachmentLabels = { image: '🖼️ صورة', video: '🎥 فيديو', document: '📄 مستند' };
+
   threadEl.innerHTML = messages
     .map((m) => {
       const isInbound = m.direction === 'inbound';
       const align = isInbound ? 'flex-start' : 'flex-end';
       const bg = isInbound ? 'var(--bg)' : 'var(--accent-soft)';
       const label = isInbound ? 'العميل' : m.sent_by ? `رد يدوي — ${m.sent_by}` : 'البوت';
+      const attachmentLine = m.attachment_type
+        ? `<div style="font-size:12px; margin-bottom:4px;">${attachmentLabels[m.attachment_type] || '📎 مرفق'}</div>`
+        : '';
       return `
         <div style="align-self:${align}; max-width:80%; background:${bg}; padding:8px 12px; border-radius:12px;">
           <div style="font-size:11px; color:var(--muted); margin-bottom:3px;">${escapeHtml(label)} · ${formatDate(m.created_at)}</div>
+          ${attachmentLine}
           <div style="font-size:13.5px; white-space:pre-wrap;">${escapeHtml(m.message || '')}</div>
         </div>
       `;
@@ -743,14 +769,19 @@ function closeConversationModal() {
 
 async function handleConversationReply() {
   const input = document.getElementById('conversation-reply-input');
+  const fileInput = document.getElementById('conversation-reply-file');
   const text = input.value.trim();
-  if (!text || !openConversationCustomerId) return;
+  const file = fileInput.files[0] || null;
+  if (!text && !file) return;
+  if (!openConversationCustomerId) return;
 
   const btn = document.getElementById('conversation-reply-btn');
   setBtnLoading(btn, true);
   try {
-    await api.sendCustomerMessage(openConversationCustomerId, text);
+    await api.sendCustomerMessage(openConversationCustomerId, { message: text, file });
     input.value = '';
+    fileInput.value = '';
+    document.getElementById('conversation-reply-file-name').style.display = 'none';
     await refreshConversationThread();
   } catch (err) {
     showToast(err.message, 'error');
@@ -1110,6 +1141,7 @@ function setupBotSettingsSection() {
   });
 
   document.getElementById('bot-settings-form').addEventListener('submit', handleBotSettingsFormSubmit);
+  document.getElementById('bot-texts-save-btn').addEventListener('click', handleSaveBotTexts);
 }
 
 function showWelcomeImagePreview(src) {
@@ -1121,6 +1153,60 @@ function showWelcomeImagePreview(src) {
 function hideWelcomeImagePreview() {
   document.getElementById('welcome-image-preview-wrap').classList.add('hidden');
   document.getElementById('welcome-image-drop').classList.remove('hidden');
+}
+
+let botTextsRegistry = [];
+
+async function loadBotTexts() {
+  const container = document.getElementById('bot-texts-list');
+  container.textContent = 'جارٍ التحميل...';
+  try {
+    const result = await api.getBotTexts();
+    botTextsRegistry = result.data;
+    renderBotTexts();
+  } catch (err) {
+    container.textContent = '';
+    showToast(err.message, 'error');
+  }
+}
+
+function renderBotTexts() {
+  const container = document.getElementById('bot-texts-list');
+  container.innerHTML = botTextsRegistry
+    .map((t) => {
+      const placeholdersHint = t.placeholders.length
+        ? `<p class="hint">يدعم استبدال: ${t.placeholders.map((p) => `<span class="mono">{${p}}</span>`).join('، ')}</p>`
+        : '';
+      const customizedBadge = t.isCustomized ? ' <span style="color:var(--accent); font-size:12px;">(مخصَّص)</span>' : '';
+      return `
+        <div class="field" style="border-bottom:1px solid var(--border); padding-bottom:14px; margin-bottom:14px;">
+          <label for="bot-text-${t.key}">${escapeHtml(t.label)}${customizedBadge}</label>
+          <textarea id="bot-text-${t.key}" data-key="${t.key}" rows="2">${escapeHtml(t.value)}</textarea>
+          ${placeholdersHint}
+        </div>
+      `;
+    })
+    .join('');
+}
+
+async function handleSaveBotTexts() {
+  const saveBtn = document.getElementById('bot-texts-save-btn');
+  const texts = {};
+  document.querySelectorAll('#bot-texts-list textarea[data-key]').forEach((el) => {
+    texts[el.dataset.key] = el.value;
+  });
+
+  setBtnLoading(saveBtn, true);
+  try {
+    const result = await api.saveBotTexts(texts);
+    botTextsRegistry = result.data;
+    renderBotTexts();
+    showToast('تم حفظ النصوص بنجاح');
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    setBtnLoading(saveBtn, false);
+  }
 }
 
 async function loadBotSettings() {
@@ -1186,16 +1272,33 @@ function setupUsersSection() {
   document.getElementById('agent-modal-close').addEventListener('click', closeAgentModal);
   document.getElementById('agent-cancel-btn').addEventListener('click', closeAgentModal);
   document.getElementById('agent-form').addEventListener('submit', handleAgentFormSubmit);
+
+  document.getElementById('agents-tbody').addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.edit-user-btn');
+    const passwordBtn = e.target.closest('.password-user-btn');
+    const deleteBtn = e.target.closest('.delete-user-btn');
+    if (editBtn) openAgentModal(findAgentById(editBtn.dataset.id));
+    if (passwordBtn) openPasswordModal(findAgentById(passwordBtn.dataset.id));
+    if (deleteBtn) openDeleteModal('user', findAgentById(deleteBtn.dataset.id));
+  });
+
+  document.getElementById('password-modal-close').addEventListener('click', closePasswordModal);
+  document.getElementById('password-cancel-btn').addEventListener('click', closePasswordModal);
+  document.getElementById('password-form').addEventListener('submit', handlePasswordFormSubmit);
+}
+
+function findAgentById(id) {
+  return agentsCache.find((a) => String(a.id) === String(id));
 }
 
 async function loadAgents() {
   const tbody = document.getElementById('agents-tbody');
   const emptyEl = document.getElementById('agents-empty');
-  tbody.innerHTML = renderSkeletonRows(4, 3);
+  tbody.innerHTML = renderSkeletonRows(4, 5);
   emptyEl.classList.add('hidden');
 
   try {
-    const result = await api.getAgents();
+    const result = await api.getAllUsers();
     agentsCache = result.data;
 
     if (agentsCache.length === 0) {
@@ -1215,41 +1318,120 @@ function renderAgentRow(a) {
     a.rating_average === null
       ? '<span class="cell-muted">لا يوجد تقييم بعد</span>'
       : `${'⭐'.repeat(Math.round(a.rating_average))} <span class="cell-muted mono">(${a.rating_average}/5 — ${a.rating_count} تقييم)</span>`;
+  const roleLabel = a.role === 'admin' ? '🛡️ مدير' : '🎧 وكيل';
+  const isSelf = getStoredAdmin() && getStoredAdmin().id === a.id;
+  const selfNote = isSelf ? ' <span class="cell-muted" style="font-size:11px;">(أنت)</span>' : '';
+
   return `
     <tr>
-      <td data-label="الاسم" class="cell-title">${escapeHtml(a.name || a.username)}</td>
+      <td data-label="الاسم" class="cell-title">${escapeHtml(a.name || a.username)}${selfNote}</td>
       <td data-label="اسم المستخدم"><span class="mono">${escapeHtml(a.username)}</span></td>
+      <td data-label="النوع">${roleLabel}</td>
       <td data-label="التقييم">${ratingDisplay}</td>
       <td data-label="تاريخ الإضافة" class="cell-muted mono">${formatDate(a.created_at)}</td>
+      <td data-label="إجراءات">
+        <div class="row-actions">
+          <button type="button" class="btn-icon edit-user-btn" title="تعديل" data-id="${a.id}">✏️</button>
+          <button type="button" class="btn-icon password-user-btn" title="تغيير كلمة المرور" data-id="${a.id}">🔑</button>
+          <button type="button" class="btn-icon delete-user-btn" title="حذف" data-id="${a.id}" ${isSelf ? 'disabled' : ''}>🗑️</button>
+        </div>
+      </td>
     </tr>
   `;
 }
 
-function openAgentModal() {
+let editingUserId = null;
+
+function openAgentModal(user = null) {
   document.getElementById('agent-form').reset();
+  editingUserId = user ? user.id : null;
+
+  const usernameField = document.getElementById('agent-username');
+  const usernameHint = document.getElementById('agent-username-hint');
+  const passwordField = document.getElementById('agent-password-field');
+
+  if (user) {
+    document.getElementById('agent-modal-title').textContent = 'تعديل مستخدم';
+    document.getElementById('agent-name').value = user.name || '';
+    usernameField.value = user.username;
+    usernameField.disabled = true;
+    usernameHint.style.display = 'block';
+    document.getElementById('agent-role').value = user.role;
+    passwordField.style.display = 'none'; // كلمة المرور تُغيَّر من زر 🔑 منفصل عند التعديل
+    document.getElementById('agent-password').required = false;
+  } else {
+    document.getElementById('agent-modal-title').textContent = 'إضافة مستخدم';
+    usernameField.disabled = false;
+    usernameHint.style.display = 'none';
+    document.getElementById('agent-role').value = 'agent';
+    passwordField.style.display = 'block';
+    document.getElementById('agent-password').required = true;
+  }
+
   document.getElementById('agent-modal-overlay').classList.remove('hidden');
 }
 
 function closeAgentModal() {
   document.getElementById('agent-modal-overlay').classList.add('hidden');
+  editingUserId = null;
 }
 
 async function handleAgentFormSubmit(e) {
   e.preventDefault();
   const saveBtn = document.getElementById('agent-save-btn');
 
-  const payload = {
-    name: document.getElementById('agent-name').value.trim(),
-    username: document.getElementById('agent-username').value.trim(),
-    password: document.getElementById('agent-password').value,
-  };
+  setBtnLoading(saveBtn, true);
+  try {
+    if (editingUserId) {
+      await api.updateUser(editingUserId, {
+        name: document.getElementById('agent-name').value.trim(),
+        role: document.getElementById('agent-role').value,
+      });
+      showToast('تم تحديث المستخدم بنجاح');
+    } else {
+      await api.createUser({
+        name: document.getElementById('agent-name').value.trim(),
+        username: document.getElementById('agent-username').value.trim(),
+        password: document.getElementById('agent-password').value,
+        role: document.getElementById('agent-role').value,
+      });
+      showToast('تمت إضافة المستخدم بنجاح');
+    }
+    closeAgentModal();
+    loadAgents();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    setBtnLoading(saveBtn, false);
+  }
+}
+
+let userForPasswordChange = null;
+
+function openPasswordModal(user) {
+  if (!user) return;
+  userForPasswordChange = user;
+  document.getElementById('password-form').reset();
+  document.getElementById('password-modal-title').textContent = `تغيير كلمة مرور ${user.name || user.username}`;
+  document.getElementById('password-modal-overlay').classList.remove('hidden');
+}
+
+function closePasswordModal() {
+  document.getElementById('password-modal-overlay').classList.add('hidden');
+  userForPasswordChange = null;
+}
+
+async function handlePasswordFormSubmit(e) {
+  e.preventDefault();
+  if (!userForPasswordChange) return;
+  const saveBtn = document.getElementById('password-save-btn');
+  const newPassword = document.getElementById('password-new').value;
 
   setBtnLoading(saveBtn, true);
   try {
-    await api.createAgent(payload);
-    showToast('تمت إضافة المستخدم بنجاح');
-    closeAgentModal();
-    loadAgents();
+    await api.changeUserPassword(userForPasswordChange.id, newPassword);
+    showToast('تم تغيير كلمة المرور بنجاح');
+    closePasswordModal();
   } catch (err) {
     showToast(err.message, 'error');
   } finally {

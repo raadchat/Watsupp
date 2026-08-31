@@ -32,10 +32,13 @@ router.get(
 );
 
 // POST /api/customers/:id/messages — رد يدوي مباشر (خارج آلة حالة البوت). نفس نطاق الصلاحية أعلاه
+// المرحلة 2: multipart/form-data اختياري (attachment: صورة/فيديو/PDF) + message
+// (نص الرسالة صار اختيارياً هنا تحديداً — التحقق "نص أو مرفق" داخل الـ controller)
 router.post(
   '/:id/messages',
   param('id').isInt().withMessage('معرف غير صالح'),
-  body('message').trim().notEmpty().withMessage('نص الرسالة مطلوب'),
+  customersController.upload.single('attachment'),
+  body('message').optional().trim(),
   handleValidation,
   customersController.sendCustomerMessage
 );

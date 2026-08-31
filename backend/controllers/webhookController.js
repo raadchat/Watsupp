@@ -6,6 +6,7 @@ const customersRepository = require('../database/repositories/customersRepositor
 const messagesRepository = require('../database/repositories/messagesRepository');
 const whatsappSettingsRepository = require('../database/repositories/whatsappSettingsRepository');
 const conversationService = require('../services/conversationService');
+const { logSafeError } = require('../utils/errors');
 
 /**
  * GET /webhook
@@ -86,7 +87,7 @@ async function handleIncomingMessage(req, res) {
     await conversationService.handleMessage(customer, { text: incomingText, selectedId });
   } catch (err) {
     // لا نُعيد الخطأ للعميل (تم الرد 200 مسبقاً)؛ فقط نسجّله للمراجعة
-    console.error('[webhookController] error processing incoming message:', err);
+    logSafeError('[webhookController] error processing incoming message:', err);
   }
 }
 

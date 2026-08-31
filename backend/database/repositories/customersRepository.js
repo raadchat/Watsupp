@@ -77,6 +77,19 @@ function updateNotificationOptIn(id, optIn) {
   return findById(id);
 }
 
+/**
+ * يحفظ مسار التنقّل الحالي في قوائم واتساب (المرحلة 1 — الرجوع)، كمصفوفة
+ * من معرّفات الأقسام الرقمية من الجذر حتى الموضع الحالي — []  يعني الجذر.
+ * لا يُحدَّث updated_at عمداً هنا (هذا تفصيل تنقّل داخلي، وليس نشاطاً فعلياً
+ * للعميل يستحق التأثير على ترتيب القوائم/الطوابير التي تعتمد على updated_at).
+ */
+function updateNavigationStack(id, stack) {
+  db.prepare('UPDATE customers SET navigation_stack = ? WHERE id = ?').run(
+    JSON.stringify(Array.isArray(stack) ? stack : []),
+    id
+  );
+}
+
 function countOptedIn() {
   return db.prepare("SELECT COUNT(*) AS count FROM customers WHERE notifications_opt_in = 'opted_in'").get().count;
 }
@@ -124,6 +137,7 @@ module.exports = {
   updateState,
   updateLastContact,
   updateNotificationOptIn,
+  updateNavigationStack,
   countOptedIn,
   findOptedInPhoneNumbers,
   findWaitingForAgent,

@@ -18,6 +18,8 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { DatabaseSync } = require('node:sqlite');
 
 const configuredPath = process.env.DATABASE_URL || './backend/database/bot.db';
@@ -46,8 +48,14 @@ ensureCustomerStateExpansionMigration(db);
 ensureMessagesSentByMigration(db);
 ensureAgentRatingColumnsMigration(db);
 ensurePublicBaseUrlMigration(db);
+ensureNavigationStackMigration(db);
+ensureAttachmentColumnsMigration(db);
+ensureSystemSettingsMigration(db);
+ensureDefaultAdminSeed(db);
 
 console.log(`[database] متصل بقاعدة البيانات: ${dbPath}`);
+
+module.exports = db;
 
 /**
  * ترقية تلقائية وآمنة للتكرار: تضيف عمود services.category_id (مرجع رقمي
@@ -131,7 +139,27 @@ function ensureServiceReplyTypeMigration(database) {
   console.log('[database] تمت الترقية — الخدمات الحالية بقيت بسلوكها الأصلي (طلب بيانات من العميل).');
 }
 
-module.exports = db;
+/**
+ * المرحلة 5 — Admin الرئيسي: يُنشئ حساب admin/admin تلقائياً إن لم يوجد أي
+ * مستخدم باسم "admin" تحديداً (لا يفحص وجود أي admin آخر — فقط هذا الاسم
+ * بالذات، تماماً كما طُلب: "إذا لم يكن موجودًا، لا تنشئ نسخة مكررة"). كلمة
+ * المرور محفوظة كـ bcrypt hash فقط، ولا تُطبَع في أي مكان (معروفة أصلاً بما
+ * أنها الافتراضي المطلوب). يُنصَح بتغييرها فوراً من صفحة "المستخدمون"، أو
+ * عبر أمر الاسترجاع الطارئ (`npm run reset-password`) إن نُسيت لاحقاً.
+ */
+function ensureDefaultAdminSeed(database) {
+  const existing = database.prepare('SELECT id FROM admins WHERE username = ?').get('admin');
+  if (existing) return;
+
+  console.log(
+    '[database] لا يوجد مستخدم باسم "admin" — يُنشأ حساب افتراضي (admin/admin). ⚠️ غيّر كلمة المرور من صفحة "المستخدمون" في أقرب وقت.'
+  );
+  const saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS) || 12;
+  const passwordHash = bcrypt.hashSync('admin', saltRounds);
+  database
+    .prepare(`INSERT INTO admins (username, password_hash, role, name) VALUES (?, ?, 'admin', ?)`)
+    .run('admin', passwordHash, 'Admin');
+}
 
 /**
  * ترقية تلقائية: تضيف customers.notifications_opt_in (موافقة تلقي الإشعارات
@@ -252,4 +280,65 @@ function ensurePublicBaseUrlMigration(database) {
 
   console.log('[database] ترقية: إضافة bot_settings.public_base_url...');
   database.exec('ALTER TABLE bot_settings ADD COLUMN public_base_url TEXT');
+}
+
+/**
+ * ترقية بسيطة (المرحلة 1 — الرجوع في قوائم واتساب): تضيف
+ * customers.navigation_stack — مسار الأقسام من الجذر حتى الموضع الحالي في
+ * قوائم واتساب التفاعلية، مخزَّن كنص JSON (مثال: "[12,25]"، أو "[]"/NULL
+ * للجذر). يقرأه/يكتبه conversationService.js فقط. NULL للعملاء الحاليين
+ * يُعامَل كمصفوفة فارغة (بلا مستوى سابق) — لا داعٍ لأي نسخ بيانات هنا.
+ */
+function ensureNavigationStackMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(customers)').all();
+  if (columns.some((c) => c.name === 'navigation_stack')) return;
+
+  console.log('[database] ترقية: إضافة customers.navigation_stack (دعم الرجوع في قوائم واتساب)...');
+  database.exec('ALTER TABLE customers ADD COLUMN navigation_stack TEXT');
+}
+
+/**
+ * ترقية المرحلة 2 (نظام المرفقات المركزي): تضيف عمودين على messages لتسجيل
+ * أي مرفق أُرسل ضمن رسالة صادرة (للعرض في سجل المحادثة لاحقاً)، وعموداً على
+ * bot_settings لتخزين Media ID الخاص بصورة الترحيب بعد رفعها مرة واحدة إلى
+ * واتساب (بدل الاعتماد فقط على رابط عام يتطلب نطاقاً علنياً/نفقاً محلياً).
+ */
+function ensureAttachmentColumnsMigration(database) {
+  const messageColumns = database.prepare('PRAGMA table_info(messages)').all();
+  if (!messageColumns.some((c) => c.name === 'attachment_type')) {
+    console.log('[database] ترقية: إضافة messages.attachment_type وmessages.attachment_filename...');
+    database.exec('ALTER TABLE messages ADD COLUMN attachment_type TEXT');
+    database.exec('ALTER TABLE messages ADD COLUMN attachment_filename TEXT');
+  }
+
+  const botSettingsColumns = database.prepare('PRAGMA table_info(bot_settings)').all();
+  if (!botSettingsColumns.some((c) => c.name === 'welcome_image_media_id')) {
+    console.log('[database] ترقية: إضافة bot_settings.welcome_image_media_id (Media ID مخزَّن لصورة الترحيب)...');
+    database.exec('ALTER TABLE bot_settings ADD COLUMN welcome_image_media_id TEXT');
+  }
+}
+
+/**
+ * المرحلة 3 (إعدادات ENV الذكية) — AUTO_GENERATED: تضمن وجود JWT_SECRET
+ * دائماً بلا أي تدخل من المدير. إن لم يوجد صف بعد (أول إقلاع على الإطلاق)،
+ * تولّد واحداً عشوائياً آمناً (32 بايت عبر crypto) وتخزّنه بشكل دائم — يبقى
+ * ثابتاً في كل إقلاع قادم (لا يُعاد توليده، وإلا انتهت صلاحية كل الجلسات
+ * المسجَّلة عند كل إعادة نشر). القيمة الفعلية المستخدَمة وقت التشغيل تُحسَم
+ * في systemSettingsRepository.getJwtSecret() (أولوية دائمة لـ .env الصريح
+ * إن وُجد، وإلا هذه القيمة المخزَّنة هنا). لا تُطبَع القيمة نفسها هنا أبداً.
+ */
+function ensureSystemSettingsMigration(database) {
+  const row = database.prepare('SELECT jwt_secret FROM system_settings WHERE id = 1').get();
+  if (row?.jwt_secret) return;
+
+  console.log(
+    '[database] توليد JWT_SECRET تلقائياً وتخزينه بأمان (لم يوجد في .env ولا في قاعدة البيانات سابقاً)...'
+  );
+  const generated = crypto.randomBytes(32).toString('hex');
+  database
+    .prepare(
+      `INSERT INTO system_settings (id, jwt_secret) VALUES (1, ?)
+       ON CONFLICT(id) DO UPDATE SET jwt_secret = excluded.jwt_secret`
+    )
+    .run(generated);
 }

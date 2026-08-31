@@ -4,13 +4,22 @@
 
 const db = require('../db');
 
-function create({ customer_id, direction, message, status = 'received', whatsapp_message_id = null, sent_by = null }) {
+function create({
+  customer_id,
+  direction,
+  message,
+  status = 'received',
+  whatsapp_message_id = null,
+  sent_by = null,
+  attachment_type = null,
+  attachment_filename = null,
+}) {
   const info = db
     .prepare(
-      `INSERT INTO messages (customer_id, direction, message, status, whatsapp_message_id, sent_by)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (customer_id, direction, message, status, whatsapp_message_id, sent_by, attachment_type, attachment_filename)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(customer_id, direction, message, status, whatsapp_message_id, sent_by);
+    .run(customer_id, direction, message, status, whatsapp_message_id, sent_by, attachment_type, attachment_filename);
   return db.prepare('SELECT * FROM messages WHERE id = ?').get(info.lastInsertRowid);
 }
 

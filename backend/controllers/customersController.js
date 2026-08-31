@@ -3,6 +3,7 @@
 const customersRepository = require('../database/repositories/customersRepository');
 const messagesRepository = require('../database/repositories/messagesRepository');
 const whatsappService = require('../services/whatsappService');
+const mediaService = require('../services/mediaService');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -57,10 +58,10 @@ const getCustomerMessages = asyncHandler(async (req, res) => {
 /** رد يدوي مباشر من مدير أو وكيل — خارج آلة حالة البوت تماماً (القسم 6: "استطاعة الرد عليها"). */
 const sendCustomerMessage = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { message } = req.body;
+  const trimmed = (req.body.message || '').trim();
 
-  if (!message || !message.trim()) {
-    throw new AppError(ErrorCodes.VALIDATION_ERROR, 'نص الرسالة مطلوب', 400);
+  if (!trimmed && !req.file) {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, 'نص الرسالة أو مرفق مطلوب', 400);
   }
 
   const customer = customersRepository.findById(id);
@@ -69,16 +70,43 @@ const sendCustomerMessage = asyncHandler(async (req, res) => {
   }
   assertCanAccessCustomer(req, customer);
 
-  const trimmed = message.trim();
-  const result = await whatsappService.sendTextMessage(customer.phone_number, trimmed);
+  let result;
+  let attachmentType = null;
+  let attachmentFilename = null;
+
+  if (req.file) {
+    // يرمي AppError عربياً فوراً (400) إن كان النوع/الحجم/الامتداد غير صالح —
+    // نفس نمط "نص الرسالة مطلوب" أعلاه، قبل أي محاولة إرسال فعلية
+    const category = mediaService.validateAttachment(req.file);
+    attachmentFilename = mediaService.saveAttachment(req.file, category);
+    attachmentType = category;
+
+    const filePath = mediaService.resolveAttachmentPath(attachmentFilename);
+    const uploadResult = await whatsappService.uploadMedia(filePath, req.file.mimetype);
+
+    // فشل الرفع يُعامَل تماماً كفشل الإرسال (يُسجَّل في السجل كمحاولة فاشلة
+    // أدناه، لا يُرمى مباشرة) — نفس منطق فشل sendTextMessage في المسار الآخر
+    result = uploadResult.success
+      ? await whatsappService.sendMediaMessage(customer.phone_number, {
+          type: category,
+          mediaId: uploadResult.mediaId,
+          caption: trimmed || undefined,
+          filename: category === 'document' ? req.file.originalname || undefined : undefined,
+        })
+      : uploadResult;
+  } else {
+    result = await whatsappService.sendTextMessage(customer.phone_number, trimmed);
+  }
 
   const saved = messagesRepository.create({
     customer_id: customer.id,
     direction: 'outbound',
-    message: trimmed,
+    message: trimmed || null,
     status: result.success ? 'sent' : 'failed',
     whatsapp_message_id: result.messageId || null,
     sent_by: req.admin.username,
+    attachment_type: attachmentType,
+    attachment_filename: attachmentFilename,
   });
 
   if (!result.success) {
@@ -88,4 +116,7 @@ const sendCustomerMessage = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: saved });
 });
 
-module.exports = { getAllCustomers, getCustomerById, getCustomerMessages, sendCustomerMessage };
+// multer المشترك من mediaService، بنفس نمط messagesController.upload وbotSettingsController.upload
+const upload = mediaService.upload;
+
+module.exports = { getAllCustomers, getCustomerById, getCustomerMessages, sendCustomerMessage, upload };

@@ -30,6 +30,7 @@ const ErrorCodes = {
   CATEGORY_IN_USE: 'CATEGORY_IN_USE',
   CATEGORY_CYCLE: 'CATEGORY_CYCLE',
   CUSTOMER_NOT_FOUND: 'CUSTOMER_NOT_FOUND',
+  USER_NOT_FOUND: 'USER_NOT_FOUND',
   USERNAME_EXISTS: 'USERNAME_EXISTS',
   RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
   WHATSAPP_NOT_CONFIGURED: 'WHATSAPP_NOT_CONFIGURED',
@@ -37,4 +38,16 @@ const ErrorCodes = {
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 };
 
-module.exports = { AppError, ErrorCodes };
+/**
+ * تسجيل آمن لأي خطأ غير متوقع (المرحلة 3 — إعدادات ENV الذكية: "لا تسجل
+ * الأسرار في Console/Logs"). نطبع فقط message وstack (نص التتبّع، لا خصائص
+ * الكائن) بدل الكائن الخام — لو كان الخطأ استثناءً هرب من مكتبة اتصال (مثل
+ * axios) لأي سبب غير متوقع، فكائنه الخام قد يحمل .config.headers.Authorization
+ * ضمن خصائصه، وطباعته مباشرة (console.error(err)) كانت ستُسرّبه في السجلات.
+ */
+function logSafeError(label, err) {
+  console.error(label, err?.message || String(err));
+  if (err?.stack) console.error(err.stack);
+}
+
+module.exports = { AppError, ErrorCodes, logSafeError };

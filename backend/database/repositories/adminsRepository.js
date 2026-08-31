@@ -34,6 +34,47 @@ function findAllAgents() {
   return db.prepare(`SELECT ${SAFE_COLUMNS} FROM admins WHERE role = 'agent' ORDER BY created_at ASC`).all();
 }
 
+/** كل المستخدمين (admin وagent معاً، المرحلة 6) — بلا password_hash أبداً. */
+function findAll() {
+  return db.prepare(`SELECT ${SAFE_COLUMNS} FROM admins ORDER BY role ASC, created_at ASC`).all();
+}
+
+/** عدد المستخدمين بدور معيَّن — يُستخدَم لمنع حذف/تخفيض آخر admin في النظام. */
+function countByRole(role) {
+  return db.prepare('SELECT COUNT(*) AS count FROM admins WHERE role = ?').get(role).count;
+}
+
+/** تعديل الاسم و/أو نوع الحساب (المرحلة 6) — لا يلمس username ولا password_hash إطلاقاً. */
+function update(id, { name, role } = {}) {
+  const existing = db.prepare('SELECT * FROM admins WHERE id = ?').get(id);
+  if (!existing) return null;
+  const finalName = name !== undefined ? name : existing.name;
+  const finalRole = role !== undefined ? role : existing.role;
+  db.prepare(`UPDATE admins SET name = ?, role = ?, updated_at = datetime('now') WHERE id = ?`).run(finalName, finalRole, id);
+  return findById(id);
+}
+
+/**
+ * حذف مستخدم (المرحلة 6). customers.assigned_agent_id وbulk_jobs.created_by
+ * قيدا Foreign Key حقيقيان (PRAGMA foreign_keys=ON في db.js)، فيُصفَّران
+ * أولاً لأي صفوف تشير لهذا المستخدم — وإلا فشل الحذف بخطأ SQLite خام بدل
+ * رسالة واضحة. سجل الرسائل الفعلي (messages.sent_by) نص ثابت غير متأثر
+ * إطلاقاً، فمحتوى المحادثات القديمة لا يُفقَد — فقط "من كان مُسنَداً له"
+ * على صفوف عملاء/رسائل جماعية قديمة تحديداً.
+ */
+function remove(id) {
+  db.exec('BEGIN');
+  try {
+    db.prepare('UPDATE customers SET assigned_agent_id = NULL WHERE assigned_agent_id = ?').run(id);
+    db.prepare('UPDATE bulk_jobs SET created_by = NULL WHERE created_by = ?').run(id);
+    db.prepare('DELETE FROM admins WHERE id = ?').run(id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 /** يُضيف تقييماً جديداً (1-5 نجوم) لرصيد وكيل — المتوسط يُحسَب لاحقاً من rating_total/rating_count عند العرض. */
 function addRating(agentId, stars) {
   db.prepare(
@@ -42,4 +83,22 @@ function addRating(agentId, stars) {
   return findById(agentId);
 }
 
-module.exports = { findByUsername, findById, create, count, findAllAgents, addRating };
+/** يُستخدَم من سكربت الاسترجاع الطارئ (npm run reset-password) فقط — hash جاهز مسبقاً، لا كلمة مرور صريحة هنا أبداً. */
+function updatePassword(id, password_hash) {
+  db.prepare(`UPDATE admins SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`).run(password_hash, id);
+  return findById(id);
+}
+
+module.exports = {
+  findByUsername,
+  findById,
+  create,
+  count,
+  findAllAgents,
+  findAll,
+  countByRole,
+  update,
+  remove,
+  addRating,
+  updatePassword,
+};

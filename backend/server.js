@@ -5,11 +5,11 @@
 
 require('dotenv').config();
 
-// --- فحص متغيرات البيئة الحرجة قبل أي شيء آخر --------------------------
-if (!process.env.JWT_SECRET) {
-  console.error('خطأ فادح: JWT_SECRET غير مضبوط في .env — لا يمكن تشغيل الخادم بدونه.');
-  process.exit(1);
-}
+// (المرحلة 3 — إعدادات ENV الذكية): JWT_SECRET لم يعد إلزامياً في .env.
+// إن لم يُضبط صراحةً، database/db.js يضمن وجود قيمة مولَّدة تلقائياً وآمنة
+// ومخزَّنة بشكل دائم منذ أول إقلاع (راجع ensureSystemSettingsMigration
+// وdatabase/repositories/systemSettingsRepository.getJwtSecret) — فلا حاجة
+// لأي فحص فادح أو process.exit هنا بعد الآن.
 
 const optionalButRecommended = ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_VERIFY_TOKEN'];
 const missing = optionalButRecommended.filter((key) => !process.env[key]);
@@ -27,6 +27,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 
 const { getUploadsDir } = require('./utils/paths');
+const { logSafeError } = require('./utils/errors');
 
 // يهيّئ الاتصال وينفّذ schema.sql عند أول استيراد
 require('./database/db');
@@ -38,6 +39,7 @@ const customersRoutes = require('./routes/customers');
 const messagesRoutes = require('./routes/messages');
 const settingsRoutes = require('./routes/settings');
 const botSettingsRoutes = require('./routes/botSettings');
+const botTextsRoutes = require('./routes/botTexts');
 const customerServiceRoutes = require('./routes/customerService');
 const usersRoutes = require('./routes/users');
 const whatsappRoutes = require('./routes/whatsapp');
@@ -70,6 +72,7 @@ app.use('/api/customers', customersRoutes);
 app.use('/api/messages', messagesRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/bot-settings', botSettingsRoutes);
+app.use('/api/bot-texts', botTextsRoutes);
 app.use('/api/customer-service', customerServiceRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/webhook', whatsappRoutes);
@@ -110,5 +113,5 @@ app.listen(PORT, () => {
 
 // لا نُسقط الخادم على أخطاء غير متوقعة في وعود لم تُمسك — نسجّلها فقط
 process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason);
+  logSafeError('[unhandledRejection]', reason);
 });

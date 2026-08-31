@@ -2,39 +2,16 @@
 // إدارة محتوى سلوك البوت — رسالة الترحيب (نص + صورة اختيارية) — التي
 // يستخدمها conversationService.sendWelcomeMessage() لأي رسالة غير مفهومة.
 
-const fs = require('fs');
-const path = require('path');
-const multer = require('multer');
 const botSettingsRepository = require('../database/repositories/botSettingsRepository');
-const { getUploadsDir } = require('../utils/paths');
+const mediaService = require('../services/mediaService');
+const whatsappService = require('../services/whatsappService');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
-const UPLOADS_DIR = getUploadsDir();
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-  filename: (req, file, cb) => {
-    // اسم فريد بالوقت لتفادي التخزين المؤقت (cache) لصورة قديمة في متصفح
-    // العميل على واتساب عند استبدال الصورة لاحقاً بأخرى بنفس الامتداد
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    cb(null, `welcome-${Date.now()}${ext}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new AppError(ErrorCodes.VALIDATION_ERROR, 'الملف المرفوع يجب أن يكون صورة', 400));
-    }
-    cb(null, true);
-  },
-});
+// نستخدم multer المشترك من mediaService (لا نظام رفع منفصل لهذه الصفحة بعد
+// المرحلة 2)، لكن نتحقق هنا تحديداً أن الملف صورة فقط — رسالة الترحيب لم
+// تُذكر ضمن الأماكن المطلوب دعم فيديو/PDF فيها في هذه المرحلة.
+const upload = mediaService.upload;
 
 const getBotSettings = asyncHandler(async (req, res) => {
   const settings = botSettingsRepository.get();
@@ -43,7 +20,9 @@ const getBotSettings = asyncHandler(async (req, res) => {
     data: {
       welcome_message: settings?.welcome_message || null,
       welcome_image_filename: settings?.welcome_image_filename || null,
-      welcome_image_url: settings?.welcome_image_filename ? `/uploads/${settings.welcome_image_filename}` : null,
+      welcome_image_url: settings?.welcome_image_filename
+        ? `/uploads/${mediaService.publicPathFor(settings.welcome_image_filename)}`
+        : null,
       public_base_url: settings?.public_base_url || null,
     },
   });
@@ -58,35 +37,65 @@ const saveBotSettings = asyncHandler(async (req, res) => {
 
   const existing = botSettingsRepository.get();
   let welcome_image_filename;
+  let welcome_image_media_id;
 
   if (req.file) {
-    welcome_image_filename = req.file.filename;
-    // احذف الصورة القديمة بعد نجاح رفع الجديدة، لا نُبقي ملفات يتيمة على القرص
+    if (mediaService.detectCategory(req.file.mimetype) !== 'image') {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'صورة الترحيب يجب أن تكون JPEG أو PNG', 400);
+    }
+    mediaService.validateAttachment(req.file); // يتحقق أيضاً الحجم (5MB) وتطابق الامتداد
+
+    welcome_image_filename = mediaService.saveAttachment(req.file, 'image');
+    welcome_image_media_id = null; // يُرفع لواتساب أدناه بعد الحفظ في قاعدة البيانات
+
     if (existing?.welcome_image_filename) {
-      const oldPath = path.join(UPLOADS_DIR, existing.welcome_image_filename);
-      fs.unlink(oldPath, () => {}); // فشل الحذف هنا غير حرج، يُتجاهل بأمان
+      mediaService.deleteAttachment(existing.welcome_image_filename); // لا نُبقي ملفات يتيمة على القرص
     }
   } else if (req.body.remove_image === 'true') {
     welcome_image_filename = null;
+    welcome_image_media_id = null;
     if (existing?.welcome_image_filename) {
-      fs.unlink(path.join(UPLOADS_DIR, existing.welcome_image_filename), () => {});
+      mediaService.deleteAttachment(existing.welcome_image_filename);
     }
   }
-  // وإلا (لا ملف جديد ولا طلب حذف): welcome_image_filename تبقى undefined،
-  // فيُبقي botSettingsRepository.save() على الصورة الحالية كما هي
+  // وإلا (لا ملف جديد ولا طلب حذف): كلاهما يبقى undefined، فيُبقي
+  // botSettingsRepository.save() على الصورة الحالية (والـ media_id الحالي) كما هما
 
-  const saved = botSettingsRepository.save({
+  let saved = botSettingsRepository.save({
     welcome_message: welcome_message.trim(),
     welcome_image_filename,
+    welcome_image_media_id,
     public_base_url: public_base_url !== undefined ? public_base_url.trim() || null : undefined,
   });
+
+  // رفع الصورة الجديدة لواتساب الآن (مرة واحدة، المرحلة 2) إن كان الاتصال
+  // مُعداً بالفعل. إن لم يكن (أو فشل الرفع الآن لأي سبب)، يبقى media_id
+  // فارغاً وتُرفع الصورة تلقائياً لاحقاً عند أول رسالة ترحيب فعلية (راجع
+  // conversationService.getWelcomeImageMediaId) — فشل الرفع هنا ليس خطأً
+  // يمنع حفظ باقي الإعدادات.
+  if (req.file && saved.welcome_image_filename) {
+    const filePath = mediaService.resolveAttachmentPath(saved.welcome_image_filename);
+    if (filePath) {
+      const uploadResult = await whatsappService.uploadMedia(filePath, req.file.mimetype);
+      if (uploadResult.success) {
+        saved = botSettingsRepository.save({
+          welcome_message: saved.welcome_message,
+          welcome_image_filename: saved.welcome_image_filename,
+          welcome_image_media_id: uploadResult.mediaId,
+          public_base_url: saved.public_base_url,
+        });
+      }
+    }
+  }
 
   res.json({
     success: true,
     data: {
       welcome_message: saved.welcome_message,
       welcome_image_filename: saved.welcome_image_filename,
-      welcome_image_url: saved.welcome_image_filename ? `/uploads/${saved.welcome_image_filename}` : null,
+      welcome_image_url: saved.welcome_image_filename
+        ? `/uploads/${mediaService.publicPathFor(saved.welcome_image_filename)}`
+        : null,
       public_base_url: saved.public_base_url || null,
     },
   });
