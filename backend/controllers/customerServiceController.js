@@ -7,9 +7,11 @@
 const customerServiceSettingsRepository = require('../database/repositories/customerServiceSettingsRepository');
 const customersRepository = require('../database/repositories/customersRepository');
 const messagesRepository = require('../database/repositories/messagesRepository');
+const customerServiceSessionsRepository = require('../database/repositories/customerServiceSessionsRepository');
 const whatsappService = require('../services/whatsappService');
 const conversationService = require('../services/conversationService');
 const botTexts = require('../services/botTexts');
+const { presentCustomer, presentCustomers } = require('../utils/customerPresentation');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -25,12 +27,12 @@ const saveSettings = asyncHandler(async (req, res) => {
 
 /** طابور الانتظار العام — مشترك بين كل الوكلاء والمدير (لا "ملكية" قبل claim). */
 const getQueue = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: customersRepository.findWaitingForAgent() });
+  res.json({ success: true, data: presentCustomers(customersRepository.findWaitingForAgent(), req) });
 });
 
 /** محادثاتي النشطة أنا تحديداً (req.admin.id) — سواء كنت admin أو agent. */
 const getMyActiveConversations = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: customersRepository.findActiveByAgent(req.admin.id) });
+  res.json({ success: true, data: presentCustomers(customersRepository.findActiveByAgent(req.admin.id), req) });
 });
 
 /** يُسنِد العميل لي، ويُرسل له إشعار انضمام الوكيل باسمه — القسم 7: "اسم الشخص يتحدث معك". */
@@ -46,6 +48,7 @@ const claimConversation = asyncHandler(async (req, res) => {
   }
 
   const updated = customersRepository.assignAgent(customer.id, req.admin.id, 'CUSTOMER_SERVICE_ACTIVE');
+  customerServiceSessionsRepository.markClaimed(customer.id, req.admin.id); // المرحلة 8: وقت بدء الرد
 
   const agentName = req.admin.name || req.admin.username;
   const text = botTexts.getText('customerServiceClaimed', { agentName });
@@ -59,7 +62,7 @@ const claimConversation = asyncHandler(async (req, res) => {
     sent_by: req.admin.username,
   });
 
-  res.json({ success: true, data: updated });
+  res.json({ success: true, data: presentCustomer(updated, req) });
 });
 
 /** إنهاء محادثة خدمة عملاء — يُرسل دعوة تقييم 5 نجوم للعميل (conversationService). */

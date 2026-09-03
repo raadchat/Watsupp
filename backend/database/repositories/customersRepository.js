@@ -94,6 +94,17 @@ function countOptedIn() {
   return db.prepare("SELECT COUNT(*) AS count FROM customers WHERE notifications_opt_in = 'opted_in'").get().count;
 }
 
+/** المرحلة 9: رسالة واردة جديدة أثناء محادثة نشطة — تُستدعى من webhookController فقط. */
+function incrementUnreadCount(id) {
+  db.prepare('UPDATE customers SET unread_count = unread_count + 1 WHERE id = ?').run(id);
+  return findById(id);
+}
+
+/** المرحلة 9: يُستدعى عند فتح محادثة هذا العميل تحديداً — لا يمسّ عملاء آخرين. */
+function resetUnreadCount(id) {
+  db.prepare('UPDATE customers SET unread_count = 0 WHERE id = ?').run(id);
+}
+
 /** أرقام هواتف العملاء الموافقين على تلقي الإشعارات — تُستخدم كمصدر أرقام مباشر في الإرسال الجماعي. */
 function findOptedInPhoneNumbers() {
   return db
@@ -143,4 +154,6 @@ module.exports = {
   findWaitingForAgent,
   findActiveByAgent,
   assignAgent,
+  incrementUnreadCount,
+  resetUnreadCount,
 };

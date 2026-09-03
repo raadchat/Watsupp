@@ -22,17 +22,22 @@ if (missing.length > 0) {
 
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const { Server } = require('socket.io');
 
 const { getUploadsDir } = require('./utils/paths');
 const { logSafeError } = require('./utils/errors');
 
 // يهيّئ الاتصال وينفّذ schema.sql عند أول استيراد
 require('./database/db');
+const systemSettingsRepository = require('./database/repositories/systemSettingsRepository');
 
 const authRoutes = require('./routes/auth');
+const logoutRoute = require('./routes/logout');
 const categoriesRoutes = require('./routes/categories');
 const servicesRoutes = require('./routes/services');
 const customersRoutes = require('./routes/customers');
@@ -66,6 +71,7 @@ app.use(generalLimiter);
 
 // --- مسارات API -------------------------------------------------------------
 app.use('/api/login', authRoutes);
+app.use('/api/logout', logoutRoute);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/customers', customersRoutes);
@@ -100,9 +106,37 @@ app.get('/', (req, res) => {
 // --- معالج الأخطاء الموحّد (يجب أن يكون آخر middleware) ----------------------
 app.use(errorHandler);
 
+// --- Socket.IO (المرحلة 9 — تعدد محادثات خدمة العملاء، تحديث حي) -----------
+// يلتف حول نفس تطبيق Express (لا خادم HTTP ثانٍ، ولا منفذ إضافي). كل اتصال
+// يُصادَق بنفس JWT المستخدَم في REST API (نفس السرّ عبر systemSettingsRepository)،
+// وينضمّ فوراً لغرفة خاصة بمعرّف المستخدم (admin أو agent سواء) — أي حدث
+// يُرسَل لاحقاً لذلك المستخدم تحديداً (كل تبويبات/أجهزة تسجيل دخوله معاً)
+// عبر io.to(`user:{id}`)، بلا بث عام لأي بيانات لغير صاحبها.
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: process.env.CORS_ORIGIN || '*' },
+});
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) return next(new Error('رمز الدخول مفقود'));
+  jwt.verify(token, systemSettingsRepository.getJwtSecret(), (err, decoded) => {
+    if (err) return next(new Error('رمز الدخول غير صالح'));
+    socket.user = decoded; // { id, username, role, name } — نفس محتوى توكن REST
+    next();
+  });
+});
+
+io.on('connection', (socket) => {
+  socket.join(`user:${socket.user.id}`);
+  socket.on('disconnect', () => {}); // لا حاجة لأي تنظيف يدوي — Socket.IO يزيل العضوية تلقائياً
+});
+
+app.set('io', io); // يُستخدَم من webhookController عبر req.app.get('io') فقط — لا وحدة وسيطة إضافية
+
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`[server] الخادم يعمل على المنفذ ${PORT}`);
   console.log(`[server] لوحة التحكم: http://localhost:${PORT}/`);
   console.log(`[server] Webhook: http://localhost:${PORT}/webhook`);

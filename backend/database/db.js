@@ -52,6 +52,7 @@ ensureNavigationStackMigration(db);
 ensureAttachmentColumnsMigration(db);
 ensureSystemSettingsMigration(db);
 ensureDefaultAdminSeed(db);
+ensureUnreadCountMigration(db);
 
 console.log(`[database] متصل بقاعدة البيانات: ${dbPath}`);
 
@@ -298,6 +299,21 @@ function ensureNavigationStackMigration(database) {
 }
 
 /**
+ * المرحلة 9 (تعدد محادثات خدمة العملاء): تضيف customers.unread_count —
+ * عدد رسائل العميل الواردة أثناء محادثة خدمة عملاء نشطة لم يرها الوكيل
+ * المُسنَد بعد. يُزاد في webhookController عند كل رسالة واردة أثناء
+ * CUSTOMER_SERVICE_ACTIVE، ويُصفَّر عند فتح تلك المحادثة تحديداً (لا يُصفَّر
+ * غيرها) — راجع customersRepository.resetUnreadCount/incrementUnreadCount.
+ */
+function ensureUnreadCountMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(customers)').all();
+  if (columns.some((c) => c.name === 'unread_count')) return;
+
+  console.log('[database] ترقية: إضافة customers.unread_count (المرحلة 9)...');
+  database.exec('ALTER TABLE customers ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0');
+}
+
+/**
  * ترقية المرحلة 2 (نظام المرفقات المركزي): تضيف عمودين على messages لتسجيل
  * أي مرفق أُرسل ضمن رسالة صادرة (للعرض في سجل المحادثة لاحقاً)، وعموداً على
  * bot_settings لتخزين Media ID الخاص بصورة الترحيب بعد رفعها مرة واحدة إلى
@@ -315,6 +331,10 @@ function ensureAttachmentColumnsMigration(database) {
   if (!botSettingsColumns.some((c) => c.name === 'welcome_image_media_id')) {
     console.log('[database] ترقية: إضافة bot_settings.welcome_image_media_id (Media ID مخزَّن لصورة الترحيب)...');
     database.exec('ALTER TABLE bot_settings ADD COLUMN welcome_image_media_id TEXT');
+  }
+  if (!botSettingsColumns.some((c) => c.name === 'show_customer_phone_to_agents')) {
+    console.log('[database] ترقية: إضافة bot_settings.show_customer_phone_to_agents (المرحلة 7)...');
+    database.exec('ALTER TABLE bot_settings ADD COLUMN show_customer_phone_to_agents INTEGER NOT NULL DEFAULT 1');
   }
 }
 

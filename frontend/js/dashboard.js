@@ -164,7 +164,12 @@ function closeMobileSidebar() {
 }
 
 function setupLogout() {
-  document.getElementById('logout-btn').addEventListener('click', () => {
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    try {
+      await apiRequest('/logout', { method: 'POST' }); // أفضل جهد فقط (المرحلة 8: سجل الخروج) — لا يمنع تسجيل الخروج محلياً لو فشل
+    } catch (err) {
+      // تجاهل: قد يكون التوكن منتهياً أصلاً، لا داعي لمنع الخروج محلياً بسبب هذا
+    }
     clearToken();
     localStorage.removeItem('admin');
     location.href = 'login.html';
@@ -1214,6 +1219,7 @@ async function loadBotSettings() {
     const result = await api.getBotSettings();
     document.getElementById('welcome-message-text').value = result.data.welcome_message || '';
     document.getElementById('public-base-url').value = result.data.public_base_url || '';
+    document.getElementById('show-customer-phone').checked = result.data.show_customer_phone_to_agents !== false;
     welcomeImageMarkedForRemoval = false;
     document.getElementById('welcome-image-input').value = '';
 
@@ -1240,6 +1246,7 @@ async function handleBotSettingsFormSubmit(e) {
   const formData = new FormData();
   formData.append('welcome_message', message);
   formData.append('public_base_url', document.getElementById('public-base-url').value.trim());
+  formData.append('show_customer_phone_to_agents', document.getElementById('show-customer-phone').checked ? 'true' : 'false');
 
   const file = document.getElementById('welcome-image-input').files[0];
   if (file) {
@@ -1267,8 +1274,8 @@ async function handleBotSettingsFormSubmit(e) {
 // =====================================================================
 
 function setupUsersSection() {
-  document.getElementById('add-agent-btn').addEventListener('click', openAgentModal);
-  document.getElementById('add-agent-btn-empty').addEventListener('click', openAgentModal);
+  document.getElementById('add-agent-btn').addEventListener('click', () => openAgentModal());
+  document.getElementById('add-agent-btn-empty').addEventListener('click', () => openAgentModal());
   document.getElementById('agent-modal-close').addEventListener('click', closeAgentModal);
   document.getElementById('agent-cancel-btn').addEventListener('click', closeAgentModal);
   document.getElementById('agent-form').addEventListener('submit', handleAgentFormSubmit);
@@ -1277,9 +1284,15 @@ function setupUsersSection() {
     const editBtn = e.target.closest('.edit-user-btn');
     const passwordBtn = e.target.closest('.password-user-btn');
     const deleteBtn = e.target.closest('.delete-user-btn');
+    const logsBtn = e.target.closest('.logs-user-btn');
     if (editBtn) openAgentModal(findAgentById(editBtn.dataset.id));
     if (passwordBtn) openPasswordModal(findAgentById(passwordBtn.dataset.id));
     if (deleteBtn) openDeleteModal('user', findAgentById(deleteBtn.dataset.id));
+    if (logsBtn) openAgentLogsModal(findAgentById(logsBtn.dataset.id));
+  });
+
+  document.getElementById('agent-logs-modal-close').addEventListener('click', () => {
+    document.getElementById('agent-logs-modal-overlay').classList.add('hidden');
   });
 
   document.getElementById('password-modal-close').addEventListener('click', closePasswordModal);
@@ -1331,6 +1344,7 @@ function renderAgentRow(a) {
       <td data-label="تاريخ الإضافة" class="cell-muted mono">${formatDate(a.created_at)}</td>
       <td data-label="إجراءات">
         <div class="row-actions">
+          ${a.role === 'agent' ? `<button type="button" class="btn-icon logs-user-btn" title="السجلات" data-id="${a.id}">📊</button>` : ''}
           <button type="button" class="btn-icon edit-user-btn" title="تعديل" data-id="${a.id}">✏️</button>
           <button type="button" class="btn-icon password-user-btn" title="تغيير كلمة المرور" data-id="${a.id}">🔑</button>
           <button type="button" class="btn-icon delete-user-btn" title="حذف" data-id="${a.id}" ${isSelf ? 'disabled' : ''}>🗑️</button>
@@ -1437,6 +1451,99 @@ async function handlePasswordFormSubmit(e) {
   } finally {
     setBtnLoading(saveBtn, false);
   }
+}
+
+function formatTimeOnly(sqliteDatetime) {
+  if (!sqliteDatetime) return null;
+  const d = new Date(`${sqliteDatetime.replace(' ', 'T')}Z`);
+  if (Number.isNaN(d.getTime())) return sqliteDatetime;
+  return d.toLocaleTimeString('ar', { timeStyle: 'short' });
+}
+
+function formatDayHeader(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('ar', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function formatDuration(fromStr, toStr) {
+  if (!fromStr || !toStr) return '—';
+  const from = new Date(`${fromStr.replace(' ', 'T')}Z`);
+  const to = new Date(`${toStr.replace(' ', 'T')}Z`);
+  const minutesTotal = Math.max(0, Math.round((to - from) / 60000));
+  if (minutesTotal < 1) return 'أقل من دقيقة';
+  const hours = Math.floor(minutesTotal / 60);
+  const minutes = minutesTotal % 60;
+  if (hours === 0) return `${minutes} دقيقة`;
+  return minutes === 0 ? `${hours} ساعة` : `${hours} ساعة ${minutes} دقيقة`;
+}
+
+const CS_SESSION_STATUS_LABELS = { waiting: 'قيد الانتظار', active: 'نشطة', completed: 'منتهية' };
+
+async function openAgentLogsModal(user) {
+  if (!user) return;
+  document.getElementById('agent-logs-modal-title').textContent = `سجلات ${user.name || user.username}`;
+  document.getElementById('agent-login-logs').textContent = 'جارٍ التحميل...';
+  document.getElementById('agent-customer-logs').innerHTML = '';
+  document.getElementById('agent-logs-modal-overlay').classList.remove('hidden');
+
+  try {
+    const [loginResult, customerResult] = await Promise.all([api.getLoginLogs(user.id), api.getCustomerLogs(user.id)]);
+    renderLoginLogs(loginResult.data);
+    renderCustomerLogs(customerResult.data);
+  } catch (err) {
+    document.getElementById('agent-login-logs').textContent = '';
+    showToast(err.message, 'error');
+  }
+}
+
+function renderLoginLogs(days) {
+  const container = document.getElementById('agent-login-logs');
+  if (days.length === 0) {
+    container.innerHTML = '<p class="cell-muted">لا يوجد أي تسجيل دخول بعد.</p>';
+    return;
+  }
+  container.innerHTML = days
+    .map(
+      (day) => `
+        <div style="margin-bottom:12px;">
+          <div style="font-weight:600; margin-bottom:4px;">${formatDayHeader(day.date)}</div>
+          ${day.sessions
+            .map(
+              (s) =>
+                `<div class="cell-muted mono" style="font-size:13px;">دخول: ${formatTimeOnly(s.login_at)} — خروج: ${
+                  s.logout_at ? formatTimeOnly(s.logout_at) : 'لم يتم تسجيل الخروج'
+                }</div>`
+            )
+            .join('')}
+        </div>
+      `
+    )
+    .join('');
+}
+
+function renderCustomerLogs(sessions) {
+  const tbody = document.getElementById('agent-customer-logs');
+  if (sessions.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="cell-muted">لا يوجد أي محادثات مسجَّلة بعد.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sessions
+    .map(
+      (s) => `
+        <tr>
+          <td data-label="رقم العميل"><span class="mono">${escapeHtml(s.phone_number)}</span></td>
+          <td data-label="دخول الانتظار" class="mono">${formatDate(s.queued_at)}</td>
+          <td data-label="بدء الرد" class="mono">${s.claimed_at ? formatDate(s.claimed_at) : '—'}</td>
+          <td data-label="مدة الانتظار">${formatDuration(s.queued_at, s.claimed_at)}</td>
+          <td data-label="انتهاء المحادثة" class="mono">${s.ended_at ? formatDate(s.ended_at) : '—'}</td>
+          <td data-label="التقييم">${s.rating ? '⭐'.repeat(s.rating) : '<span class="cell-muted">—</span>'}</td>
+          <td data-label="الرسائل">${s.message_count}</td>
+          <td data-label="الحالة">${CS_SESSION_STATUS_LABELS[s.status] || s.status}</td>
+        </tr>
+      `
+    )
+    .join('');
 }
 
 // =====================================================================

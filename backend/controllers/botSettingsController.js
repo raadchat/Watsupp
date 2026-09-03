@@ -24,12 +24,13 @@ const getBotSettings = asyncHandler(async (req, res) => {
         ? `/uploads/${mediaService.publicPathFor(settings.welcome_image_filename)}`
         : null,
       public_base_url: settings?.public_base_url || null,
+      show_customer_phone_to_agents: settings?.show_customer_phone_to_agents !== 0,
     },
   });
 });
 
 const saveBotSettings = asyncHandler(async (req, res) => {
-  const { welcome_message, public_base_url } = req.body;
+  const { welcome_message, public_base_url, show_customer_phone_to_agents } = req.body;
 
   if (!welcome_message || !welcome_message.trim()) {
     throw new AppError(ErrorCodes.VALIDATION_ERROR, 'نص رسالة الترحيب مطلوب', 400);
@@ -66,6 +67,8 @@ const saveBotSettings = asyncHandler(async (req, res) => {
     welcome_image_filename,
     welcome_image_media_id,
     public_base_url: public_base_url !== undefined ? public_base_url.trim() || null : undefined,
+    show_customer_phone_to_agents:
+      show_customer_phone_to_agents !== undefined ? show_customer_phone_to_agents === 'true' : undefined,
   });
 
   // رفع الصورة الجديدة لواتساب الآن (مرة واحدة، المرحلة 2) إن كان الاتصال
@@ -97,6 +100,7 @@ const saveBotSettings = asyncHandler(async (req, res) => {
         ? `/uploads/${mediaService.publicPathFor(saved.welcome_image_filename)}`
         : null,
       public_base_url: saved.public_base_url || null,
+      show_customer_phone_to_agents: saved.show_customer_phone_to_agents !== 0,
     },
   });
 });

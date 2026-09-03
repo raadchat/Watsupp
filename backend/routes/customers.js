@@ -43,4 +43,12 @@ router.post(
   customersController.sendCustomerMessage
 );
 
+// POST /api/customers/:id/mark-read — المرحلة 9: تصفير unread_count فقط (بلا جلب الرسائل كاملة). نفس نطاق الصلاحية أعلاه
+router.post(
+  '/:id/mark-read',
+  param('id').isInt().withMessage('معرف غير صالح'),
+  handleValidation,
+  customersController.markCustomerAsRead
+);
+
 module.exports = router;

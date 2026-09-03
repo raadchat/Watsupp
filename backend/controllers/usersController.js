@@ -7,6 +7,8 @@
 
 const bcrypt = require('bcryptjs'); // نفس واجهة bcrypt، بلا تصريف أصلي
 const adminsRepository = require('../database/repositories/adminsRepository');
+const agentLoginLogsRepository = require('../database/repositories/agentLoginLogsRepository');
+const customerServiceSessionsRepository = require('../database/repositories/customerServiceSessionsRepository');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -93,4 +95,36 @@ const changeUserPassword = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { id: Number(id) } });
 });
 
-module.exports = { getAllUsers, createUser, updateUser, deleteUser, changeUserPassword };
+/** المرحلة 8 — سجل الدخول/الخروج، مُجمَّع حسب اليوم (الأحدث أولاً). */
+const getLoginLogs = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  if (!adminsRepository.findById(id)) {
+    throw new AppError(ErrorCodes.USER_NOT_FOUND, 'المستخدم غير موجود', 404);
+  }
+
+  const rows = agentLoginLogsRepository.findByAdminId(id);
+  const byDay = new Map();
+  rows.forEach((r) => {
+    const day = r.login_at.slice(0, 10); // YYYY-MM-DD من نص SQLite datetime('now')
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push({ login_at: r.login_at, logout_at: r.logout_at });
+  });
+
+  const days = [...byDay.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([date, sessions]) => ({ date, sessions }));
+
+  res.json({ success: true, data: days });
+});
+
+/** المرحلة 8 — سجل العملاء (جلسات خدمة العملاء) لهذا الوكيل. */
+const getCustomerLogs = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  if (!adminsRepository.findById(id)) {
+    throw new AppError(ErrorCodes.USER_NOT_FOUND, 'المستخدم غير موجود', 404);
+  }
+
+  res.json({ success: true, data: customerServiceSessionsRepository.findByAgentId(id) });
+});
+
+module.exports = { getAllUsers, createUser, updateUser, deleteUser, changeUserPassword, getLoginLogs, getCustomerLogs };

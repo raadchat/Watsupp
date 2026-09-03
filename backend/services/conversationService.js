@@ -27,6 +27,7 @@ const adminsRepository = require('../database/repositories/adminsRepository');
 const whatsappService = require('./whatsappService');
 const mediaService = require('./mediaService');
 const botTexts = require('./botTexts');
+const customerServiceSessionsRepository = require('../database/repositories/customerServiceSessionsRepository');
 const axios = require('axios');
 
 const SERVICES_TRIGGER_WORDS = ['الخدمات', 'خدمات', 'services', 'menu', 'قائمة', 'show_menu'];
@@ -343,6 +344,7 @@ async function handleCustomerServiceRequest(customer) {
   const result = await whatsappService.sendTextMessage(customer.phone_number, text);
   await sendOutbound(customer, text, result);
   customersRepository.updateState(customer.id, 'CUSTOMER_SERVICE_WAITING');
+  customerServiceSessionsRepository.create(customer.id); // المرحلة 8: بداية سجل جلسة جديدة (وقت دخول الانتظار)
 }
 
 /**
@@ -370,6 +372,7 @@ async function endCustomerServiceConversation(customer) {
   });
   await sendOutbound(customer, bodyText, result);
   customersRepository.updateState(customer.id, 'CUSTOMER_SERVICE_RATING');
+  customerServiceSessionsRepository.markEnded(customer.id); // المرحلة 8: وقت انتهاء المحادثة (قبل التقييم الاختياري)
 }
 
 /** العميل اختار عدد نجوم — تُسجَّل للوكيل المُسنَد له، ثم تنتهي المحادثة بالمسار المعتاد (قد يُسأل عن الإشعارات). */
@@ -378,7 +381,8 @@ async function handleRatingReply(customer, selectedRatingId) {
   const stars = match ? Number(match[1]) : null;
 
   if (stars && customer.assigned_agent_id) {
-    adminsRepository.addRating(customer.assigned_agent_id, stars);
+    adminsRepository.addRating(customer.assigned_agent_id, stars); // إجمالي تراكمي (موجود مسبقاً) — لا يتغيّر
+    customerServiceSessionsRepository.setRating(customer.id, stars); // المرحلة 8: تقييم هذه الجلسة تحديداً في السجل
   }
 
   const text = botTexts.getText('ratingThanks');

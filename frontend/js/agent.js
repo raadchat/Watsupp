@@ -1,12 +1,19 @@
 // js/agent.js
 // واجهة وكيل خدمة العملاء المبسّطة. يستخدم نفس api.js ونفس دوال
 // localStorage (getToken/getStoredAdmin/...) المُعرَّفة هناك.
+//
+// المرحلة 9 — تعدد المحادثات: كل محادثة في "محادثاتي" مستقلة تماماً؛ وصول
+// رسالة لمحادثة غير مفتوحة حالياً لا يفتحها ولا يزعج المحادثة المفتوحة،
+// فقط يزيد unread_count الخاص بها ويُظهر 🔴 على صفّها. التحديث حي عبر
+// Socket.IO (queue تبقى بالاستطلاع الدوري فقط، لا علاقة لها بهذه المرحلة)،
+// مع استطلاع دوري أبطأ كشبكة أمان لو انقطع الاتصال الحي مؤقتاً.
 
 let currentTab = 'queue';
 let queueCache = [];
 let mineCache = [];
 let openCustomerId = null;
 let pollTimer = null;
+let socket = null;
 
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
@@ -61,7 +68,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('agent-name').textContent = admin.name || admin.username;
   }
 
-  document.getElementById('logout-btn').addEventListener('click', () => {
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    try {
+      await apiRequest('/logout', { method: 'POST' });
+    } catch (err) {
+      // تجاهل: أفضل جهد فقط، لا يمنع تسجيل الخروج محلياً
+    }
+    if (socket) socket.disconnect();
     clearToken();
     localStorage.removeItem('admin');
     location.href = 'login.html';
@@ -87,8 +100,45 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   refreshAll();
-  pollTimer = setInterval(refreshAll, 5000); // تحديث دوري: طابور جديد، أو رد عميل وصل أثناء محادثة مفتوحة
+  connectSocket();
+  // شبكة أمان أبطأ بعد وجود التحديث الحي (يلتقط تغيّرات الطابور، ويُعيد
+  // المزامنة الكاملة لو انقطع اتصال Socket.IO مؤقتاً ثم عاد)
+  pollTimer = setInterval(refreshAll, 15000);
 });
+
+/**
+ * المرحلة 9: اتصال حي واحد طوال الجلسة، بنفس JWT المستخدَم في REST API.
+ * فشل الاتصال (شبكة، خادم بلا هذا الإصدار بعد، ...) صامت عمداً — الاستطلاع
+ * الدوري أعلاه يبقى شبكة الأمان، فلا تتعطل الصفحة لو تعذّر الاتصال الحي.
+ */
+function connectSocket() {
+  socket = io({ auth: { token: getToken() } });
+
+  socket.on('connect_error', (err) => {
+    console.warn('[socket] تعذّر الاتصال الحي (سيستمر الاستطلاع الدوري كبديل):', err.message);
+  });
+
+  socket.on('conversation:new-message', (payload) => {
+    const { customerId, message, unreadCount } = payload;
+
+    if (String(customerId) === String(openCustomerId)) {
+      // المحادثة المفتوحة فعلاً: أضف الرسالة مباشرة بلا إعادة جلب كاملة،
+      // وصفّر unread فوراً على الخادم (لن يظهر 🔴 لمحادثة ينظر إليها الوكيل الآن)
+      appendMessageToOpenThread(message);
+      api.markCustomerAsRead(customerId).catch(() => {});
+      return;
+    }
+
+    const idx = mineCache.findIndex((c) => String(c.id) === String(customerId));
+    if (idx === -1) {
+      refreshAll(); // محادثة غير موجودة في نسختنا المحلية بعد (تولٍّ حدث في تبويب آخر مثلاً) — أعد المزامنة كاملة
+      return;
+    }
+    // لا تنقل الشاشة إلى هذه المحادثة، ولا تمسّ أي محادثة أخرى — فقط عدّاد هذا الصف
+    mineCache[idx] = { ...mineCache[idx], unread_count: unreadCount };
+    if (currentTab === 'mine') renderList();
+  });
+}
 
 function switchTab(tab) {
   currentTab = tab;
@@ -109,11 +159,6 @@ async function refreshAll() {
     document.getElementById('mine-count').textContent = mineCache.length;
 
     renderList();
-
-    // إن كانت هناك محادثة مفتوحة حالياً، حدّث نص المحادثة أيضاً (رد عميل جديد مثلاً)
-    if (openCustomerId) {
-      refreshChatThread();
-    }
   } catch (err) {
     // فشل صامت في الاستطلاع الدوري — لا نُزعج الوكيل بتنبيه متكرر
     console.error(err);
@@ -135,17 +180,21 @@ function renderList() {
 
   emptyEl.classList.add('hidden');
   listEl.innerHTML = items
-    .map(
-      (c) => `
-    <div class="conversation-list-item ${String(c.id) === String(openCustomerId) ? 'active' : ''}" data-id="${c.id}" style="padding:14px 16px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-      <div>
+    .map((c) => {
+      const unreadBadge =
+        currentTab === 'mine' && c.unread_count > 0
+          ? `<span style="background:#e11d48; color:#fff; border-radius:999px; padding:2px 9px; font-size:11px; font-weight:700; white-space:nowrap;">🔴 ${c.unread_count}</span>`
+          : '';
+      return `
+    <div class="conversation-list-item ${String(c.id) === String(openCustomerId) ? 'active' : ''}" data-id="${c.id}" style="padding:14px 16px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <div style="min-width:0;">
         <div class="mono" style="font-weight:600; font-size:13.5px;">${escapeHtml(c.phone_number)}</div>
         <div class="cell-muted" style="font-size:12px; margin-top:2px;">${STATE_LABELS[c.conversation_state] || ''} · ${formatDate(c.updated_at)}</div>
       </div>
-      ${currentTab === 'queue' ? '<span class="btn btn-primary" style="padding:6px 12px; font-size:12px;">تولّي</span>' : ''}
+      ${currentTab === 'queue' ? '<span class="btn btn-primary" style="padding:6px 12px; font-size:12px;">تولّي</span>' : unreadBadge}
     </div>
-  `
-    )
+  `;
+    })
     .join('');
 
   listEl.querySelectorAll('.conversation-list-item').forEach((el) => {
@@ -173,9 +222,11 @@ async function handleClaim(customerId) {
 }
 
 async function openChat(customerId) {
+  // فتح محادثة أخرى لا يغلق أو يمسّ أي محادثة أخرى في القائمة — فقط يُبدّل أي لوحة الدردشة معروضة حالياً
   openCustomerId = customerId;
   document.getElementById('chat-placeholder').classList.add('hidden');
   document.getElementById('chat-panel').classList.remove('hidden');
+  document.getElementById('chat-thread').removeAttribute('data-last-message-id');
 
   const customer = mineCache.find((c) => String(c.id) === String(customerId));
   document.getElementById('chat-phone').textContent = customer ? customer.phone_number : '';
@@ -190,6 +241,14 @@ async function refreshChatThread() {
   try {
     const result = await api.getCustomerMessages(openCustomerId);
     renderChatThread(result.data.messages);
+
+    // فتح المحادثة صفّر unread على الخادم (getCustomerMessages تفعل هذا في
+    // المرحلة 9) — نعكس ذلك محلياً فوراً كي لا يظهر 🔴 قديم بعد إغلاق اللوحة وفتحها
+    const idx = mineCache.findIndex((c) => String(c.id) === String(openCustomerId));
+    if (idx !== -1) {
+      mineCache[idx] = { ...mineCache[idx], unread_count: 0 };
+      if (currentTab === 'mine') renderList();
+    }
   } catch (err) {
     // إن فُقدت الصلاحية (مثال: انتهت المحادثة أو انتقلت لوكيل آخر) أغلق اللوحة بهدوء
     if (err.message && err.message.includes('صلاحية')) {
@@ -202,30 +261,46 @@ function renderChatThread(messages) {
   const threadEl = document.getElementById('chat-thread');
   if (messages.length === 0) {
     threadEl.innerHTML = '<p class="cell-muted">لا توجد رسائل بعد.</p>';
+    threadEl.removeAttribute('data-last-message-id');
     return;
   }
 
+  threadEl.innerHTML = messages.map((m) => chatBubbleHtml(m)).join('');
+  threadEl.dataset.lastMessageId = String(messages[messages.length - 1].id);
+  threadEl.scrollTop = threadEl.scrollHeight;
+}
+
+function chatBubbleHtml(m) {
   const attachmentLabels = { image: '🖼️ صورة', video: '🎥 فيديو', document: '📄 مستند' };
+  const isInbound = m.direction === 'inbound';
+  const align = isInbound ? 'flex-start' : 'flex-end';
+  const bg = isInbound ? 'var(--bg)' : 'var(--accent-soft)';
+  const label = isInbound ? 'العميل' : m.sent_by ? 'أنت' : 'البوت';
+  const attachmentLine = m.attachment_type
+    ? `<div style="font-size:12px; margin-bottom:4px;">${attachmentLabels[m.attachment_type] || '📎 مرفق'}</div>`
+    : '';
+  return `
+    <div style="align-self:${align}; max-width:80%; background:${bg}; padding:8px 12px; border-radius:12px;">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:3px;">${escapeHtml(label)} · ${formatDate(m.created_at)}</div>
+      ${attachmentLine}
+      <div style="font-size:13.5px; white-space:pre-wrap;">${escapeHtml(m.message || '')}</div>
+    </div>
+  `;
+}
 
-  threadEl.innerHTML = messages
-    .map((m) => {
-      const isInbound = m.direction === 'inbound';
-      const align = isInbound ? 'flex-start' : 'flex-end';
-      const bg = isInbound ? 'var(--bg)' : 'var(--accent-soft)';
-      const label = isInbound ? 'العميل' : m.sent_by ? 'أنت' : 'البوت';
-      const attachmentLine = m.attachment_type
-        ? `<div style="font-size:12px; margin-bottom:4px;">${attachmentLabels[m.attachment_type] || '📎 مرفق'}</div>`
-        : '';
-      return `
-        <div style="align-self:${align}; max-width:80%; background:${bg}; padding:8px 12px; border-radius:12px;">
-          <div style="font-size:11px; color:var(--muted); margin-bottom:3px;">${escapeHtml(label)} · ${formatDate(m.created_at)}</div>
-          ${attachmentLine}
-          <div style="font-size:13.5px; white-space:pre-wrap;">${escapeHtml(m.message || '')}</div>
-        </div>
-      `;
-    })
-    .join('');
+/**
+ * المرحلة 9: يُضيف رسالة واحدة وصلت عبر Socket.IO للمحادثة المفتوحة حالياً
+ * فقط — بلا أي إعادة جلب كاملة (فورية وأخف). يتجاهل بأمان لو وصلت نفس
+ * الرسالة مرتين لأي سبب (نفس معرّفها الأخير المعروض فعلاً).
+ */
+function appendMessageToOpenThread(message) {
+  const threadEl = document.getElementById('chat-thread');
+  if (threadEl.dataset.lastMessageId === String(message.id)) return;
 
+  if (threadEl.querySelector('p.cell-muted')) threadEl.innerHTML = ''; // كانت فارغة، هذه أول رسالة تصل الآن
+
+  threadEl.insertAdjacentHTML('beforeend', chatBubbleHtml(message));
+  threadEl.dataset.lastMessageId = String(message.id);
   threadEl.scrollTop = threadEl.scrollHeight;
 }
 

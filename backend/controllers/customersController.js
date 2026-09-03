@@ -4,6 +4,7 @@ const customersRepository = require('../database/repositories/customersRepositor
 const messagesRepository = require('../database/repositories/messagesRepository');
 const whatsappService = require('../services/whatsappService');
 const mediaService = require('../services/mediaService');
+const { presentCustomer, presentCustomers } = require('../utils/customerPresentation');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -25,7 +26,7 @@ const getAllCustomers = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: result.rows,
+    data: presentCustomers(result.rows, req),
     meta: { total: result.total, page: result.page, pageSize: result.pageSize },
   });
 });
@@ -38,7 +39,7 @@ const getCustomerById = asyncHandler(async (req, res) => {
     throw new AppError(ErrorCodes.CUSTOMER_NOT_FOUND, 'العميل غير موجود', 404);
   }
 
-  res.json({ success: true, data: customer });
+  res.json({ success: true, data: presentCustomer(customer, req) });
 });
 
 /** سجل المحادثة الكامل (القسم 6: "عرض المحادثات كاملة") */
@@ -51,8 +52,25 @@ const getCustomerMessages = asyncHandler(async (req, res) => {
   }
   assertCanAccessCustomer(req, customer);
 
+  customersRepository.resetUnreadCount(id); // المرحلة 9: فتح المحادثة = رؤيتها، يُصفَّر هذا العميل فقط
+  const freshCustomer = customersRepository.findById(id);
+
   const messages = messagesRepository.findByCustomerId(id);
-  res.json({ success: true, data: { customer, messages } });
+  res.json({ success: true, data: { customer: presentCustomer(freshCustomer, req), messages } });
+});
+
+/** المرحلة 9: تصفير سريع بلا جلب كامل الرسائل — تُستدعى عند وصول حدث Socket لمحادثة مفتوحة بالفعل. */
+const markCustomerAsRead = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const customer = customersRepository.findById(id);
+  if (!customer) {
+    throw new AppError(ErrorCodes.CUSTOMER_NOT_FOUND, 'العميل غير موجود', 404);
+  }
+  assertCanAccessCustomer(req, customer);
+
+  customersRepository.resetUnreadCount(id);
+  res.json({ success: true, data: { id: Number(id) } });
 });
 
 /** رد يدوي مباشر من مدير أو وكيل — خارج آلة حالة البوت تماماً (القسم 6: "استطاعة الرد عليها"). */
@@ -119,4 +137,4 @@ const sendCustomerMessage = asyncHandler(async (req, res) => {
 // multer المشترك من mediaService، بنفس نمط messagesController.upload وbotSettingsController.upload
 const upload = mediaService.upload;
 
-module.exports = { getAllCustomers, getCustomerById, getCustomerMessages, sendCustomerMessage, upload };
+module.exports = { getAllCustomers, getCustomerById, getCustomerMessages, sendCustomerMessage, markCustomerAsRead, upload };

@@ -48,4 +48,15 @@ router.put(
   usersController.changeUserPassword
 );
 
+// GET /api/users/:id/login-logs  (المرحلة 8)
+router.get('/:id/login-logs', param('id').isInt().withMessage('معرف غير صالح'), handleValidation, usersController.getLoginLogs);
+
+// GET /api/users/:id/customer-logs  (المرحلة 8)
+router.get(
+  '/:id/customer-logs',
+  param('id').isInt().withMessage('معرف غير صالح'),
+  handleValidation,
+  usersController.getCustomerLogs
+);
+
 module.exports = router;

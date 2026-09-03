@@ -90,6 +90,10 @@ CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_number);
 -- ملاحظة (المرحلة 1 — الرجوع في قوائم واتساب): navigation_stack (مسار الأقسام
 -- من الجذر حتى الموضع الحالي، JSON نصي، مثال: "[12,25]") يُضاف أيضاً عبر
 -- ترقية تلقائية في db.js — راجع ensureNavigationStackMigration.
+-- ملاحظة (المرحلة 9 — تعدد محادثات خدمة العملاء): unread_count (عدد
+-- الرسائل غير المقروءة في محادثة خدمة عملاء نشطة تحديداً) يُضاف أيضاً عبر
+-- ترقية تلقائية، ويُصفَّر عند فتح تلك المحادثة — راجع
+-- ensureUnreadCountMigration وbackend/server.js (Socket.IO).
 
 -- ---------------------------------------------------------
 -- Messages: سجل كل رسالة واردة/صادرة مرتبطة بعميل
@@ -175,6 +179,11 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 -- ملاحظة (المرحلة 2): welcome_image_media_id يُضاف أيضاً عبر ترقية تلقائية —
 -- Media ID مخزَّن بعد رفع صورة الترحيب مرة واحدة لواتساب، بدل الاعتماد فقط
 -- على رابط عام (public_base_url) يتطلب نطاقاً علنياً أو نفقاً محلياً.
+-- ملاحظة (المرحلة 7): show_customer_phone_to_agents (0/1، افتراضي 1=يظهر)
+-- يُضاف أيضاً عبر ترقية تلقائية — يتحكم فقط بإخفاء رقم العميل عرضياً عن
+-- الوكيل (Agent) في واجهات خدمة العملاء؛ الرقم نفسه يبقى كما هو في قاعدة
+-- البيانات دائماً، ولا يتأثر إرسال/استقبال رسائل واتساب الفعلي بهذا الإعداد
+-- إطلاقاً — راجع backend/utils/customerPresentation.js.
 -- ملاحظة: bot_settings.public_base_url (الرابط العام للخادم، لازم لبناء رابط
 -- صورة الترحيب الذي يجلبه واتساب) يُضاف عبر ترقية تلقائية في db.js.
 
@@ -199,6 +208,36 @@ CREATE TABLE IF NOT EXISTS system_settings (
   id          INTEGER PRIMARY KEY CHECK (id = 1),
   jwt_secret  TEXT
 );
+
+-- المرحلة 8 (سجلات Agents) — سجل دخول/خروج: صف واحد لكل عملية تسجيل دخول.
+-- logout_at يبقى NULL إن لم يُسجَّل خروج صريح (انتهاء الجلسة تلقائياً بعد 24
+-- ساعة، أو إغلاق المتصفح بلا ضغط "تسجيل خروج") — يُعرَض كـ"لم يتم تسجيل
+-- الخروج" في الواجهة، وهذا متوقَّع ومقصود، وليس خطأ.
+CREATE TABLE IF NOT EXISTS agent_login_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id   INTEGER NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+  login_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  logout_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_login_logs_admin ON agent_login_logs(admin_id);
+
+-- المرحلة 8 — سجل عملاء لكل جلسة خدمة عملاء كاملة (طابور → تولٍّ → إنهاء →
+-- تقييم اختياري)، منفصل عمداً عن customers نفسه (الذي يعكس آخر حالة فقط،
+-- فتُفقَد الجلسات السابقة لو أُعيد استخدامه لهذا الغرض). rating هنا خاص
+-- بهذه الجلسة تحديداً؛ admins.rating_total/rating_count (الموجود مسبقاً)
+-- يبقى كما هو كمجموع تراكمي — هذا الجدول يُغذّيه ولا يستبدله.
+CREATE TABLE IF NOT EXISTS customer_service_sessions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  agent_id     INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+  queued_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  claimed_at   TEXT,
+  ended_at     TEXT,
+  rating       INTEGER,
+  status       TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'completed'))
+);
+CREATE INDEX IF NOT EXISTS idx_cs_sessions_agent ON customer_service_sessions(agent_id);
+CREATE INDEX IF NOT EXISTS idx_cs_sessions_customer ON customer_service_sessions(customer_id);
 
 -- المرحلة 4 (النصوص والأزرار الثابتة): جدول مفتاح/قيمة — صف واحد فقط لكل
 -- نص تم تخصيصه من لوحة التحكم (الافتراضي مُعرَّف في الكود، في

@@ -315,6 +315,14 @@
                 <p class="hint">لازم فقط إذا أردت إرسال صورة ترحيب — واتساب يجلب الصورة عبر هذا الرابط + المسار الداخلي، فيجب أن يكون الخادم متاحاً عليه فعلياً من الإنترنت.</p>
               </div>
 
+              <div class="field">
+                <label for="show-customer-phone">
+                  <input type="checkbox" id="show-customer-phone" style="width:auto; margin-left:8px;" checked />
+                  إظهار رقم العميل في محادثات خدمة العملاء
+                </label>
+                <p class="hint">عند إيقافه، لا يرى الوكيل (Agent) رقم العميل في طابور الانتظار أو المحادثة — يبقى الرقم كما هو في قاعدة البيانات ولا يتأثر إرسال الرسائل الفعلي؛ الإخفاء للعرض فقط. المدير (Admin) يرى الرقم دائماً بغضّ النظر عن هذا الخيار.</p>
+              </div>
+
               <button type="submit" id="bot-settings-save-btn" class="btn btn-primary">
                 <span class="spinner"></span>
                 <span class="btn-label">حفظ رسالة الترحيب</span>
@@ -694,6 +702,39 @@
           <button type="button" class="btn btn-secondary" id="password-cancel-btn">إلغاء</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ============== Modal: سجلات وكيل (المرحلة 8) ============== -->
+  <div id="agent-logs-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3 id="agent-logs-modal-title">سجلات</h3>
+        <button class="modal-close" id="agent-logs-modal-close">×</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+        <h4>سجل الدخول والخروج</h4>
+        <div id="agent-login-logs">جارٍ التحميل...</div>
+
+        <h4 style="margin-top:20px;">سجل العملاء</h4>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>رقم العميل</th>
+                <th>دخول الانتظار</th>
+                <th>بدء الرد</th>
+                <th>مدة الانتظار</th>
+                <th>انتهاء المحادثة</th>
+                <th>التقييم</th>
+                <th>الرسائل</th>
+                <th>الحالة</th>
+              </tr>
+            </thead>
+            <tbody id="agent-customer-logs"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 

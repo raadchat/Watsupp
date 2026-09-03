@@ -74,7 +74,7 @@ async function handleIncomingMessage(req, res) {
       }
     }
 
-    messagesRepository.create({
+    const savedMessage = messagesRepository.create({
       customer_id: customer.id,
       direction: 'inbound',
       message: incomingText || selectedId || `[${message.type}]`,
@@ -85,6 +85,28 @@ async function handleIncomingMessage(req, res) {
     customersRepository.updateLastContact(customer.id);
 
     await conversationService.handleMessage(customer, { text: incomingText, selectedId });
+
+    // المرحلة 9: البوت لا يتدخل إطلاقاً أثناء CUSTOMER_SERVICE_ACTIVE (يعود
+    // فوراً من conversationService.handleMessage)، فحالة customer المحمَّلة
+    // أعلاه تعكس الوضع الفعلي بدقة هنا — لا حاجة لإعادة قراءتها من القاعدة.
+    if (customer.conversation_state === 'CUSTOMER_SERVICE_ACTIVE' && customer.assigned_agent_id) {
+      const updatedCustomer = customersRepository.incrementUnreadCount(customer.id);
+      const io = req.app.get('io');
+      io.to(`user:${customer.assigned_agent_id}`).emit('conversation:new-message', {
+        conversationId: customer.id,
+        customerId: customer.id,
+        message: {
+          id: savedMessage.id,
+          direction: savedMessage.direction,
+          message: savedMessage.message,
+          attachment_type: savedMessage.attachment_type,
+          attachment_filename: savedMessage.attachment_filename,
+          created_at: savedMessage.created_at,
+        },
+        timestamp: savedMessage.created_at,
+        unreadCount: updatedCustomer.unread_count,
+      });
+    }
   } catch (err) {
     // لا نُعيد الخطأ للعميل (تم الرد 200 مسبقاً)؛ فقط نسجّله للمراجعة
     logSafeError('[webhookController] error processing incoming message:', err);

@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const adminsRepository = require('../database/repositories/adminsRepository');
 const systemSettingsRepository = require('../database/repositories/systemSettingsRepository');
+const agentLoginLogsRepository = require('../database/repositories/agentLoginLogsRepository');
 const { AppError, ErrorCodes } = require('../utils/errors');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -32,6 +33,8 @@ const login = asyncHandler(async (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
 
+  agentLoginLogsRepository.recordLogin(admin.id); // المرحلة 8: سجل دخول جديد
+
   res.json({
     success: true,
     data: {
@@ -41,4 +44,10 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { login };
+/** المرحلة 8: يُسجَّل فقط عند ضغط "تسجيل الخروج" صراحةً — يتطلب توكناً صالحاً ليُعرَف صاحبه. */
+const logout = asyncHandler(async (req, res) => {
+  agentLoginLogsRepository.recordLogout(req.admin.id);
+  res.json({ success: true });
+});
+
+module.exports = { login, logout };

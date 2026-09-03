@@ -101,6 +101,7 @@ const api = {
   },
   getCustomer: (id) => apiRequest(`/customers/${id}`),
   getCustomerMessages: (id) => apiRequest(`/customers/${id}/messages`),
+  markCustomerAsRead: (id) => apiRequest(`/customers/${id}/mark-read`, { method: 'POST' }),
   sendCustomerMessage: (id, { message, file } = {}) => {
     if (file) {
       const formData = new FormData();
@@ -137,4 +138,6 @@ const api = {
   updateUser: (id, updates) => apiRequest(`/users/${id}`, { method: 'PUT', body: updates }),
   deleteUser: (id) => apiRequest(`/users/${id}`, { method: 'DELETE' }),
   changeUserPassword: (id, password) => apiRequest(`/users/${id}/password`, { method: 'PUT', body: { password } }),
+  getLoginLogs: (id) => apiRequest(`/users/${id}/login-logs`),
+  getCustomerLogs: (id) => apiRequest(`/users/${id}/customer-logs`),
 };
