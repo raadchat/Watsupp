@@ -70,6 +70,12 @@ function updateLastContact(id) {
   ).run(id);
 }
 
+/** المرحلة 10: يُحدَّث فقط إن أرسلت Meta اسماً هذه المرة (قد لا يصل مع كل Webhook) — أحدث قيمة معروفة تبقى. */
+function updateProfileName(id, profileName) {
+  if (!profileName) return;
+  db.prepare('UPDATE customers SET profile_name = ? WHERE id = ?').run(profileName, id);
+}
+
 function updateNotificationOptIn(id, optIn) {
   db.prepare(
     `UPDATE customers SET notifications_opt_in = ?, updated_at = datetime('now') WHERE id = ?`
@@ -140,6 +146,56 @@ function assignAgent(customerId, agentId, newState) {
   return findById(customerId);
 }
 
+/**
+ * المرحلة 10 (رسائل واتساب): كل عميل لديه رسالة واحدة فعلية على الأقل، مع
+ * معاينة آخر رسالة ووقتها، لصفحة "رسائل واتساب" — غير مقصور على محادثات
+ * خدمة العملاء، أي عميل راسل البوت يظهر هنا. آخر رسالة تُحسَب بـ subquery
+ * (نفس نمط message_count في customerServiceSessionsRepository).
+ */
+function findConversations({ search, page = 1, pageSize = 30 } = {}) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 30));
+  const offset = (safePage - 1) * safePageSize;
+
+  const lastMessageSelects = `
+    (SELECT message FROM messages m WHERE m.customer_id = c.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
+    (SELECT direction FROM messages m WHERE m.customer_id = c.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_direction,
+    (SELECT attachment_type FROM messages m WHERE m.customer_id = c.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_attachment_type,
+    (SELECT created_at FROM messages m WHERE m.customer_id = c.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message_at
+  `;
+  const hasMessages = 'EXISTS (SELECT 1 FROM messages m WHERE m.customer_id = c.id)';
+
+  let rows;
+  let total;
+
+  if (search) {
+    const like = `%${search}%`;
+    rows = db
+      .prepare(
+        `SELECT c.id, c.phone_number, c.profile_name, c.unread_count, c.assigned_agent_id, c.conversation_state, ${lastMessageSelects}
+         FROM customers c
+         WHERE ${hasMessages} AND (c.phone_number LIKE ? OR c.profile_name LIKE ?)
+         ORDER BY last_message_at DESC LIMIT ? OFFSET ?`
+      )
+      .all(like, like, safePageSize, offset);
+    total = db
+      .prepare(`SELECT COUNT(*) AS count FROM customers c WHERE ${hasMessages} AND (c.phone_number LIKE ? OR c.profile_name LIKE ?)`)
+      .get(like, like).count;
+  } else {
+    rows = db
+      .prepare(
+        `SELECT c.id, c.phone_number, c.profile_name, c.unread_count, c.assigned_agent_id, c.conversation_state, ${lastMessageSelects}
+         FROM customers c
+         WHERE ${hasMessages}
+         ORDER BY last_message_at DESC LIMIT ? OFFSET ?`
+      )
+      .all(safePageSize, offset);
+    total = db.prepare(`SELECT COUNT(*) AS count FROM customers c WHERE ${hasMessages}`).get().count;
+  }
+
+  return { rows, total, page: safePage, pageSize: safePageSize };
+}
+
 module.exports = {
   findAll,
   findById,
@@ -156,4 +212,6 @@ module.exports = {
   assignAgent,
   incrementUnreadCount,
   resetUnreadCount,
+  updateProfileName,
+  findConversations,
 };

@@ -53,6 +53,7 @@ ensureAttachmentColumnsMigration(db);
 ensureSystemSettingsMigration(db);
 ensureDefaultAdminSeed(db);
 ensureUnreadCountMigration(db);
+ensureProfileNameMigration(db);
 
 console.log(`[database] متصل بقاعدة البيانات: ${dbPath}`);
 
@@ -311,6 +312,15 @@ function ensureUnreadCountMigration(database) {
 
   console.log('[database] ترقية: إضافة customers.unread_count (المرحلة 9)...');
   database.exec('ALTER TABLE customers ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0');
+}
+
+/** المرحلة 10 (رسائل واتساب): اسم عرض العميل في واتساب، إن أرسلته Meta ضمن الـ Webhook. */
+function ensureProfileNameMigration(database) {
+  const columns = database.prepare('PRAGMA table_info(customers)').all();
+  if (columns.some((c) => c.name === 'profile_name')) return;
+
+  console.log('[database] ترقية: إضافة customers.profile_name (المرحلة 10)...');
+  database.exec('ALTER TABLE customers ADD COLUMN profile_name TEXT');
 }
 
 /**

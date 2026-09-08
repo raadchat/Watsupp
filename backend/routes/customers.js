@@ -13,6 +13,9 @@ router.use(authenticateToken);
 // GET /api/customers?search=...&page=...&pageSize=...  — قائمة كل العملاء: للمدير فقط
 router.get('/', requireAdminRole, customersController.getAllCustomers);
 
+// GET /api/customers/conversations — المرحلة 10 (رسائل واتساب): للمدير فقط، يجب أن يسبق ':id' كي لا يُفسَّر "conversations" كمعرّف
+router.get('/conversations', requireAdminRole, customersController.getConversations);
+
 // GET /api/customers/:id — للمدير فقط (الوكيل يصل لعملائه عبر /api/customer-service بدل هذا)
 router.get(
   '/:id',

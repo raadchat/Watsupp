@@ -1044,6 +1044,31 @@ tbody tr:hover {
   .row-actions {
     justify-content: flex-start;
   }
+
+  /* المرحلة 10 — رسائل واتساب على الجوال: لوحة واحدة في كل مرة، وزر "رجوع"
+     يعيد القائمة (بلا أي علاقة بزر الرجوع داخل قوائم واتساب نفسها، المرحلة 1) */
+  .wa-layout {
+    height: calc(100vh - 170px);
+  }
+  .wa-list-pane {
+    width: 100%;
+    border-left: none;
+  }
+  .wa-detail-placeholder {
+    display: none;
+  }
+  .wa-detail-pane {
+    display: none;
+  }
+  .wa-back-btn {
+    display: inline-flex;
+  }
+  .wa-layout.wa-mobile-detail-open .wa-list-pane {
+    display: none;
+  }
+  .wa-layout.wa-mobile-detail-open .wa-detail-pane {
+    display: flex;
+  }
 }
 
 .menu-toggle {
@@ -1057,4 +1082,85 @@ tbody tr:hover {
   justify-content: center;
   cursor: pointer;
   font-size: 16px;
+}
+
+/* ===== المرحلة 10 — رسائل واتساب: قائمة + محادثة جنباً لجنب على الشاشات
+   الكبيرة، وواحدة فقط في كل مرة على الجوال (راجع تعديل الجوال أسفله) ===== */
+.wa-layout {
+  display: flex;
+  height: calc(100vh - 200px);
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.wa-list-pane {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-detail-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wa-detail-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wa-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wa-back-btn {
+  display: none; /* الجوال فقط — يُفعَّل داخل الاستعلام الإعلامي أدناه */
+  border: none;
+  background: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--accent);
+  padding: 4px;
+}
+
+.wa-conversation-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.wa-conversation-item:hover {
+  background: var(--bg);
+}
+
+.wa-conversation-item.active {
+  background: var(--accent-soft);
+}
+
+.wa-unread-badge {
+  background: #e11d48;
+  color: #fff;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
 }

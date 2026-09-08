@@ -102,6 +102,8 @@ const api = {
   getCustomer: (id) => apiRequest(`/customers/${id}`),
   getCustomerMessages: (id) => apiRequest(`/customers/${id}/messages`),
   markCustomerAsRead: (id) => apiRequest(`/customers/${id}/mark-read`, { method: 'POST' }),
+  getWhatsappConversations: (search) =>
+    apiRequest(`/customers/conversations${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   sendCustomerMessage: (id, { message, file } = {}) => {
     if (file) {
       const formData = new FormData();

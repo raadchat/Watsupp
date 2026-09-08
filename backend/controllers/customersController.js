@@ -15,6 +15,21 @@ function assertCanAccessCustomer(req, customer) {
   throw new AppError(ErrorCodes.FORBIDDEN, 'لا تملك صلاحية الوصول لهذه المحادثة', 403);
 }
 
+/** المرحلة 10 (رسائل واتساب): كل عميل لديه رسائل، مع معاينة آخر رسالة — لصفحة "رسائل واتساب" الجديدة. */
+const getConversations = asyncHandler(async (req, res) => {
+  const { search, page, pageSize } = req.query;
+  const result = customersRepository.findConversations({
+    search: search ? String(search).trim() : undefined,
+    page: page ? Number(page) : 1,
+    pageSize: pageSize ? Number(pageSize) : 30,
+  });
+  res.json({
+    success: true,
+    data: presentCustomers(result.rows, req),
+    meta: { total: result.total, page: result.page, pageSize: result.pageSize },
+  });
+});
+
 const getAllCustomers = asyncHandler(async (req, res) => {
   const { search, page, pageSize } = req.query;
 
@@ -137,4 +152,12 @@ const sendCustomerMessage = asyncHandler(async (req, res) => {
 // multer المشترك من mediaService، بنفس نمط messagesController.upload وbotSettingsController.upload
 const upload = mediaService.upload;
 
-module.exports = { getAllCustomers, getCustomerById, getCustomerMessages, sendCustomerMessage, markCustomerAsRead, upload };
+module.exports = {
+  getAllCustomers,
+  getCustomerById,
+  getCustomerMessages,
+  sendCustomerMessage,
+  markCustomerAsRead,
+  getConversations,
+  upload,
+};

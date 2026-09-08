@@ -20,6 +20,7 @@ const SECTION_TITLES = {
   bulk: 'الرسائل الجماعية',
   'bot-settings': 'إعدادات البوت',
   'bot-texts': 'النصوص والأزرار',
+  'whatsapp-messages': 'رسائل واتساب',
   users: 'المستخدمون',
   settings: 'الاتصال بواتساب',
 };
@@ -108,8 +109,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setupBotSettingsSection();
   setupUsersSection();
   setupCustomerServiceToggle();
+  setupWhatsappMessagesSection();
 
   loadCategories(); // القسم الافتراضي عند فتح اللوحة (المستوى الأول في قائمة واتساب)
+  connectAdminSocket(); // المرحلة 10: نفس البنية الحية من المرحلة 9، لتحديث محادثة "رسائل واتساب" المفتوحة فوراً
 });
 
 // ---------- التنقّل بين الأقسام ----------
@@ -145,6 +148,7 @@ function showSection(name) {
     loadCustomerServiceSettings();
   }
   if (name === 'bot-texts') loadBotTexts();
+  if (name === 'whatsapp-messages') loadWhatsappConversations();
   if (name === 'users') loadAgents();
 }
 
@@ -686,6 +690,186 @@ function updatePaginationUI() {
 }
 
 // =====================================================================
+// رسائل واتساب (المرحلة 10) — كل عميل راسل البوت، قائمة + محادثة، شبيهة
+// بواتساب. يعيد استخدام renderConversationThread وapi.sendCustomerMessage
+// الموجودين أصلاً (نفس المرفقات من المرحلة 2) بدل نظام موازٍ، ويستخدم نفس
+// Socket.IO من المرحلة 9 للمحادثة المفتوحة هنا تحديداً.
+// =====================================================================
+
+let waConversationsCache = [];
+let waOpenCustomerId = null;
+let waSearchDebounceTimer = null;
+let adminSocket = null;
+
+const WA_STATE_LABELS = {
+  CUSTOMER_SERVICE_WAITING: 'بانتظار وكيل',
+  CUSTOMER_SERVICE_ACTIVE: 'محادثة خدمة عملاء نشطة',
+  CUSTOMER_SERVICE_RATING: 'ينتظر تقييم العميل',
+};
+
+function setupWhatsappMessagesSection() {
+  document.getElementById('wa-search').addEventListener('input', (e) => {
+    clearTimeout(waSearchDebounceTimer);
+    const value = e.target.value.trim();
+    waSearchDebounceTimer = setTimeout(() => loadWhatsappConversations(value), 400);
+  });
+
+  document.getElementById('wa-back-btn').addEventListener('click', () => {
+    document.getElementById('wa-layout').classList.remove('wa-mobile-detail-open');
+  });
+
+  document.getElementById('wa-reply-btn').addEventListener('click', handleWhatsappReply);
+  document.getElementById('wa-reply-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleWhatsappReply();
+  });
+  document.getElementById('wa-reply-attach-btn').addEventListener('click', () => {
+    document.getElementById('wa-reply-file').click();
+  });
+  document.getElementById('wa-reply-file').addEventListener('change', (e) => {
+    const label = document.getElementById('wa-reply-file-name');
+    const file = e.target.files[0];
+    label.style.display = file ? 'block' : 'none';
+    label.textContent = file ? `📎 ${file.name}` : '';
+  });
+}
+
+async function loadWhatsappConversations(search) {
+  const listEl = document.getElementById('wa-conversations-list');
+  const emptyEl = document.getElementById('wa-list-empty');
+  try {
+    const result = await api.getWhatsappConversations(search);
+    waConversationsCache = result.data;
+
+    if (waConversationsCache.length === 0) {
+      listEl.innerHTML = '';
+      emptyEl.classList.remove('hidden');
+      return;
+    }
+    emptyEl.classList.add('hidden');
+    renderWhatsappConversations();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+function formatShortTime(sqliteDatetime) {
+  if (!sqliteDatetime) return '';
+  const d = new Date(`${sqliteDatetime.replace(' ', 'T')}Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  const isToday = d.toDateString() === new Date().toDateString();
+  return isToday
+    ? d.toLocaleTimeString('ar', { timeStyle: 'short' })
+    : d.toLocaleDateString('ar', { day: 'numeric', month: 'short' });
+}
+
+function renderWhatsappConversations() {
+  const listEl = document.getElementById('wa-conversations-list');
+  const attachmentLabels = { image: '🖼️ صورة', video: '🎥 فيديو', document: '📄 مستند' };
+
+  listEl.innerHTML = waConversationsCache
+    .map((c) => {
+      const title = c.profile_name || c.phone_number;
+      const subtitle = c.profile_name ? c.phone_number : '';
+      let preview = c.last_message_attachment_type
+        ? attachmentLabels[c.last_message_attachment_type] || '📎 مرفق'
+        : (c.last_message || '').slice(0, 40);
+      if (c.last_message_direction === 'outbound' && !c.last_message_attachment_type) preview = `أنت: ${preview}`;
+      const unreadBadge = c.unread_count > 0 ? `<span class="wa-unread-badge">🔴 ${c.unread_count}</span>` : '';
+      return `
+        <div class="wa-conversation-item ${String(c.id) === String(waOpenCustomerId) ? 'active' : ''}" data-id="${c.id}">
+          <div style="min-width:0; flex:1;">
+            <div class="cell-title" style="font-weight:600; font-size:13.5px;">${escapeHtml(title)}</div>
+            ${subtitle ? `<div class="cell-muted mono" style="font-size:11px;">${escapeHtml(subtitle)}</div>` : ''}
+            <div class="cell-muted" style="font-size:12.5px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(preview)}</div>
+          </div>
+          <div style="text-align:left; flex-shrink:0;">
+            <div class="cell-muted" style="font-size:11px;">${formatShortTime(c.last_message_at)}</div>
+            ${unreadBadge}
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+
+  listEl.querySelectorAll('.wa-conversation-item').forEach((el) => {
+    el.addEventListener('click', () => openWhatsappConversation(el.dataset.id));
+  });
+}
+
+async function openWhatsappConversation(customerId) {
+  waOpenCustomerId = customerId;
+  document.getElementById('wa-layout').classList.add('wa-mobile-detail-open');
+  document.getElementById('wa-detail-placeholder').classList.add('hidden');
+  document.getElementById('wa-detail-pane').classList.remove('hidden');
+
+  const cached = waConversationsCache.find((c) => String(c.id) === String(customerId));
+  document.getElementById('wa-detail-name').textContent = cached ? cached.profile_name || cached.phone_number : '';
+  document.getElementById('wa-detail-state').textContent = cached ? WA_STATE_LABELS[cached.conversation_state] || '' : '';
+
+  renderWhatsappConversations(); // لتحديث تظليل العنصر النشط فقط
+
+  try {
+    const result = await api.getCustomerMessages(customerId);
+    renderConversationThread(result.data.messages, 'wa-detail-thread');
+
+    const idx = waConversationsCache.findIndex((c) => String(c.id) === String(customerId));
+    if (idx !== -1) {
+      waConversationsCache[idx] = { ...waConversationsCache[idx], unread_count: 0 };
+      renderWhatsappConversations();
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function handleWhatsappReply() {
+  if (!waOpenCustomerId) return;
+  const input = document.getElementById('wa-reply-input');
+  const fileInput = document.getElementById('wa-reply-file');
+  const text = input.value.trim();
+  const file = fileInput.files[0] || null;
+  if (!text && !file) return;
+
+  const btn = document.getElementById('wa-reply-btn');
+  setBtnLoading(btn, true);
+  try {
+    await api.sendCustomerMessage(waOpenCustomerId, { message: text, file });
+    input.value = '';
+    fileInput.value = '';
+    document.getElementById('wa-reply-file-name').style.display = 'none';
+    const result = await api.getCustomerMessages(waOpenCustomerId);
+    renderConversationThread(result.data.messages, 'wa-detail-thread');
+    loadWhatsappConversations(document.getElementById('wa-search').value.trim()); // لتحديث معاينة آخر رسالة في القائمة
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    setBtnLoading(btn, false);
+  }
+}
+
+/**
+ * المرحلة 10: نفس اتصال Socket.IO من المرحلة 9 (لا نظام ثانٍ) — هنا فقط
+ * لتحديث محادثة "رسائل واتساب" المفتوحة حالياً بلا انتظار فتحها/إغلاقها
+ * يدوياً. فشل الاتصال صامت عمداً (هذه الصفحة تعتمد الفتح اليدوي أصلاً، فالحي هنا تحسين إضافي فقط).
+ */
+function connectAdminSocket() {
+  adminSocket = io({ auth: { token: getToken() } });
+  adminSocket.on('connect_error', () => {});
+  adminSocket.on('conversation:new-message', (payload) => {
+    if (String(payload.customerId) === String(waOpenCustomerId)) {
+      api
+        .getCustomerMessages(payload.customerId)
+        .then((result) => renderConversationThread(result.data.messages, 'wa-detail-thread'))
+        .catch(() => {});
+      api.markCustomerAsRead(payload.customerId).catch(() => {});
+    }
+    if (document.getElementById('section-whatsapp-messages')?.classList.contains('active')) {
+      loadWhatsappConversations(document.getElementById('wa-search').value.trim());
+    }
+  });
+}
+
+// =====================================================================
 // محادثة العميل (عرض كامل + رد يدوي مباشر) — القسم 6
 // =====================================================================
 
@@ -736,8 +920,8 @@ async function refreshConversationThread() {
   }
 }
 
-function renderConversationThread(messages) {
-  const threadEl = document.getElementById('conversation-thread');
+function renderConversationThread(messages, targetElementId = 'conversation-thread') {
+  const threadEl = document.getElementById(targetElementId);
   if (messages.length === 0) {
     threadEl.innerHTML = '<p class="cell-muted">لا توجد رسائل بعد.</p>';
     return;

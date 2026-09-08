@@ -42,6 +42,12 @@ function extractIncomingMessage(body) {
   return value?.messages?.[0] || null;
 }
 
+/** المرحلة 10: اسم عرض واتساب للمرسِل، إن أرسلته Meta ضمن نفس الـ payload (ليس مضموناً في كل رسالة). */
+function extractProfileName(body) {
+  const value = body?.entry?.[0]?.changes?.[0]?.value;
+  return value?.contacts?.[0]?.profile?.name || null;
+}
+
 /**
  * POST /webhook
  * يجب الرد بسرعة (200) على Meta بغض النظر عن نتيجة المعالجة الداخلية، وإلا
@@ -60,6 +66,7 @@ async function handleIncomingMessage(req, res) {
     if (!customer) {
       customer = customersRepository.create({ phone_number: fromPhoneNumber });
     }
+    customersRepository.updateProfileName(customer.id, extractProfileName(req.body)); // المرحلة 10
 
     let incomingText = null;
     let selectedId = null; // قد يكون معرّف قسم أو خدمة — conversationService يفسّره حسب حالة العميل الحالية

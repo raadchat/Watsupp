@@ -28,6 +28,9 @@
         <button class="nav-item" data-section="customers">
           <span>👥 العملاء</span>
         </button>
+        <button class="nav-item" data-section="whatsapp-messages">
+          <span>📱 رسائل واتساب</span>
+        </button>
         <button class="nav-item" data-section="bulk">
           <span>📣 الرسائل الجماعية</span>
         </button>
@@ -182,6 +185,52 @@
               <div class="pager-btns">
                 <button id="prev-page-btn">السابق</button>
                 <button id="next-page-btn">التالي</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============== قسم رسائل واتساب (المرحلة 10) ============== -->
+        <section id="section-whatsapp-messages" class="section">
+          <div class="section-header">
+            <div>
+              <h2>رسائل واتساب</h2>
+              <p class="subtitle">كل عميل راسل البوت، مرتَّبين بآخر نشاط — بغضّ النظر عن كونها محادثة خدمة عملاء أم لا.</p>
+            </div>
+          </div>
+
+          <div class="wa-layout" id="wa-layout">
+            <div class="wa-list-pane">
+              <div style="padding:12px; border-bottom:1px solid var(--border);">
+                <input type="text" id="wa-search" placeholder="بحث بالاسم أو رقم الهاتف..." style="width:100%;" />
+              </div>
+              <div id="wa-conversations-list" style="flex:1; overflow-y:auto;"></div>
+              <div id="wa-list-empty" class="state-block hidden">
+                <p class="cell-muted">لا توجد أي محادثات بعد.</p>
+              </div>
+            </div>
+
+            <div class="wa-detail-placeholder" id="wa-detail-placeholder">
+              <p class="cell-muted">اختر محادثة من القائمة لعرضها.</p>
+            </div>
+
+            <div class="wa-detail-pane hidden" id="wa-detail-pane">
+              <div class="wa-detail-header">
+                <button type="button" class="wa-back-btn" id="wa-back-btn">→ رجوع</button>
+                <div style="min-width:0;">
+                  <div id="wa-detail-name" class="cell-title" style="font-weight:600;"></div>
+                  <div id="wa-detail-state" class="cell-muted" style="font-size:12px;"></div>
+                </div>
+              </div>
+              <div id="wa-detail-thread" class="chat-thread" style="flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px;"></div>
+              <div class="modal-footer" style="flex-direction:column; align-items:stretch; border-top:1px solid var(--border); padding:12px;">
+                <div class="toolbar">
+                  <input type="file" id="wa-reply-file" accept="image/jpeg,image/png,video/mp4,application/pdf" style="display:none;" />
+                  <button type="button" class="btn btn-secondary" id="wa-reply-attach-btn" title="إرفاق صورة/فيديو/PDF">📎</button>
+                  <input type="text" id="wa-reply-input" placeholder="اكتب رداً..." style="flex:1;" />
+                  <button type="button" class="btn btn-primary" id="wa-reply-btn">إرسال</button>
+                </div>
+                <div id="wa-reply-file-name" class="subtitle" style="display:none; margin-top:6px;"></div>
               </div>
             </div>
           </div>
@@ -782,6 +831,7 @@
 
   <div id="toast-container" class="toast-container"></div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script src="js/api.js"></script>
   <script src="js/dashboard.js"></script>
 </body>
